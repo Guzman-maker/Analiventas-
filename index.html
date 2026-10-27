@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RutaVentas">
+<title>RutaVentas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* ===== Tokens de color (claro/oscuro) — cambia aquí la paleta ===== */
+:root{--bg:#f1f5f4;--card:#fff;--ink:#0d2326;--mut:#5b7074;--pri:#0f766e;--acc:#f59e0b;--bd:#d9e2e1;--bad:#c0392b;--ok:#15803d;color-scheme:light}
+:root[data-t=dark]{--bg:#0b1a1d;--card:#12272b;--ink:#e6f0ef;--mut:#8aa3a6;--pri:#2dd4bf;--bd:#223c41;--bad:#f0776a;--ok:#4ade80;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 14px 110px}
+h2{font-size:1.35rem;margin:6px 0 12px}h3{margin:0 0 8px;font-size:1.05rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+.stat small{color:var(--mut);display:block}.stat b{font-size:1.2rem}
+.mut{color:var(--mut)}.pad{padding:20px}.sm{font-size:.85rem}.bad{color:var(--bad)}.ok{color:var(--ok)}
+label{display:block;font-size:.85rem;color:var(--mut);margin-bottom:10px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;margin-top:4px}
+input[type=checkbox]{width:auto;margin-right:8px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{font:inherit;font-weight:600;border:1px solid var(--bd);background:var(--card);color:var(--ink);padding:10px 14px;border-radius:10px;cursor:pointer;margin:0 6px 6px 0}
+.btn.p{background:var(--pri);color:#fff;border-color:var(--pri)}:root[data-t=dark] .btn.p{color:#04201d}
+.btn.d{color:var(--bad)}.btn.s{padding:6px 10px;font-size:.85rem}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px solid var(--bd);border-radius:99px;padding:6px 12px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+.chip.on{background:var(--pri);color:#fff;border-color:var(--pri)}:root[data-t=dark] .chip.on{color:#04201d}
+.tag{font-size:.72rem;border-radius:6px;padding:1px 6px;margin-right:6px;border:1px solid var(--bd)}
+.tag.dato{background:#d1fae5;color:#065f46}.tag.est{background:#fef3c7;color:#92400e}.tag.demo{background:#e0e7ff;color:#3730a3}
+.li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)}.li:last-child{border:0}
+.banner{background:#fef3c7;color:#92400e;border-radius:10px;padding:10px;margin-bottom:12px;font-size:.9rem}
+#map,.map{height:320px;border-radius:12px;border:1px solid var(--bd);margin-bottom:12px}
+canvas{max-height:220px}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:5}
+nav button{background:none;border:0;color:var(--mut);font:inherit;font-size:.75rem;padding:6px 0;cursor:pointer}
+nav button.on{color:var(--pri);font-weight:700}
+nav .fab{width:58px;height:58px;border-radius:50%;background:var(--acc);color:#1b1200;font-size:2rem;font-weight:700;margin:-26px auto 0;box-shadow:0 4px 12px rgba(0,0,0,.25);display:block;line-height:1}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10;display:flex;align-items:flex-end;justify-content:center}
+.sheet>div{background:var(--card);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;display:none;max-width:90%}
+#toast.e{background:var(--bad);color:#fff}
+textarea.sql{height:140px;font:12px/1.3 ui-monospace,monospace}
+@media(prefers-reduced-motion:no-preference){.sheet>div{animation:up .18s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.5}}}
+</style>
+</head>
+<body>
+<main id="v"><p class="mut pad">Cargando…</p></main>
+<nav>
+ <button data-a="go" data-v="home">Inicio</button>
+ <button data-a="go" data-v="sales">Ventas</button>
+ <button class="fab" data-a="newsale" aria-label="Registrar venta">+</button>
+ <button data-a="go" data-v="route">Ruta</button>
+ <button data-a="go" data-v="more">Más</button>
+</nav>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+"use strict";
+/* ================= UTILIDADES ================= */
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c=='x'?r:r&3|8).toString(16)});
+const num=v=>{const n=parseFloat(v);return isFinite(n)?n:NaN};
+const sum=(a,f)=>a.reduce((t,x)=>t+f(x),0);
+const $m=n=>'$'+(+n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+const day=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fdt=t=>new Date(t).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const dur=ms=>{const m=Math.round(ms/60000);return m>=60?Math.floor(m/60)+' h '+m%60+' min':m+' min'};
+const km=m=>m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m';
+const DAYS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const hav=(a,b)=>{const R=6371e3,r=x=>x*Math.PI/180,dl=r(b.lat-a.lat),dg=r(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dg/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+let tt;function toast(m,e){const t=$('#toast');t.textContent=m;t.className=e?'e':'';t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',3200)}
+function sheet(h){closeSheet();const d=document.createElement('div');d.className='sheet';d.id='sh';d.innerHTML='<div>'+h+'</div>';d.addEventListener('click',e=>{if(e.target===d)closeSheet()});document.body.appendChild(d)}
+function closeSheet(){const s=$('#sh');if(s)s.remove()}
+function dl(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove()}
+
+/* ================= ESTADO + localStorage ================= */
+const KEY='rutaventas.v1';
+const blank=()=>({products:[],sales:[],routes:[],events:[],del:[],active:null,wx:null,
+ cfg:{place:'Lázaro Cárdenas, Michoacán',lat:17.958,lng:-102.2,url:'',key:'',theme:'auto',last:''}});
+let S=(()=>{try{const o=JSON.parse(localStorage.getItem(KEY)||'null');if(!o)return blank();const b=blank();return Object.assign(b,o,{cfg:Object.assign(b.cfg,o.cfg||{})})}catch(e){return blank()}})();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('No se pudo guardar localmente: '+e.message,1)}}
+const ar=()=>S.routes.find(r=>r.id===S.active);
+/* Si la página se recargó con una ruta activa, queda en pausa (el GPS no sigue solo) */
+(()=>{const r=ar();if(r&&r.status==='tracking'){const l=r.pts[r.pts.length-1];r.acc+=(l?l.t:r.seg)-r.seg;r.status='paused';save()}})();
+
+/* ================= TEMA + PWA ================= */
+function theme(){const t=S.cfg.theme;document.documentElement.dataset.t=t==='auto'?(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'):t}
+theme();
+(()=>{ /* Manifest en blob + icono generado: instalación básica sin archivos extra */
+ try{const c=document.createElement('canvas');c.width=c.height=180;const x=c.getContext('2d');x.fillStyle='#0f766e';x.fillRect(0,0,180,180);x.fillStyle='#f59e0b';x.font='bold 84px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText('RV',90,96);
+ const ic=c.toDataURL('image/png');const l=document.createElement('link');l.rel='apple-touch-icon';l.href=ic;document.head.appendChild(l);
+ const mf={name:'RutaVentas',short_name:'RutaVentas',display:'standalone',start_url:location.href.split('#')[0],background_color:'#0b1a1d',theme_color:'#0f766e',icons:[{src:ic,sizes:'180x180',type:'image/png'}]};
+ const m=document.createElement('link');m.rel='manifest';m.href=URL.createObjectURL(new Blob([JSON.stringify(mf)],{type:'application/manifest+json'}));document.head.appendChild(m)}catch(e){}
+})();
+
+/* ================= CÁLCULOS ================= */
+let R={k:'week',from:'',to:''}; /* rango del dashboard */
+function rng(){const n=new Date(),d0=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+ if(R.k==='today')return[+d0,+d0+864e5];
+ if(R.k==='week'){const s=new Date(d0);s.setDate(s.getDate()-((s.getDay()+6)%7));return[+s,+s+7*864e5]}
+ if(R.k==='month')return[+new Date(n.getFullYear(),n.getMonth(),1),+new Date(n.getFullYear(),n.getMonth()+1,1)];
+ const a=R.from?+new Date(R.from+'T00:00'):+d0,b=R.to?+new Date(R.to+'T00:00')+864e5:+d0+864e5;return[a,Math.max(b,a+864e5)]}
+const inR=(a,b)=>S.sales.filter(s=>s.ts>=a&&s.ts<b);
+function stat(L){const inc=sum(L,s=>s.total),cost=sum(L,s=>s.cost*s.qty),by={};
+ L.forEach(s=>by[s.name]=(by[s.name]||0)+s.qty);const top=Object.entries(by).sort((a,b)=>b[1]-a[1])[0];
+ const ts=L.map(s=>s.ts).sort((a,b)=>a-b),g=[];for(let i=1;i<ts.length;i++){const d=ts[i]-ts[i-1];if(d<3*36e5)g.push(d)}
+ return{n:L.length,inc,cost,pr:inc-cost,u:sum(L,s=>s.qty),top,gap:g.length?sum(g,x=>x)/g.length:null}}
+const zk=s=>s.lat==null?null:(Math.round(s.lat/.005)*.005).toFixed(3)+', '+(Math.round(s.lng/.005)*.005).toFixed(3);
+function zones(L){const m={};L.forEach(s=>{const k=zk(s);if(!k)return;m[k]=m[k]||{n:0,inc:0};m[k].n++;m[k].inc+=s.total});return Object.entries(m).sort((a,b)=>b[1].inc-a[1].inc)}
+const delta=(c,p)=>p?((c-p)/p*100>=0?'+':'')+((c-p)/p*100).toFixed(0)+'%':'—';
+const HOL=['01-01','02-14','05-01','05-10','09-16','11-02','12-12','12-24','12-25','12-31'];
+function flags(d){const f=[],dm=d.getDate(),last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(),w=d.getDay();
+ if([14,15,16,last-1,last,1].includes(dm))f.push('quincena');if(w===0||w===6)f.push('fin de semana');
+ if(dm<=3)f.push('inicio de mes');if(dm>=last-2)f.push('fin de mes');
+ if(HOL.includes(String(d.getMonth()+1).padStart(2,'0')+'-'+String(dm).padStart(2,'0')))f.push('día festivo');return f}
+const wxRain=()=>S.wx&&Date.now()-S.wx.t<3*36e5?S.wx.prec>0:null;
+
+/* ================= RECOMENDACIONES (reglas y estadística simple, NO IA) ================= */
+function recs(){const A=S.sales,o=[],T=(t,x)=>o.push({t,x});
+ if(A.length<10)return[{t:'Estimación',x:'Registra al menos 10 ventas (tienes '+A.length+') para generar recomendaciones con tu historial.'}];
+ const g=f=>{const m={};A.forEach(s=>{const k=f(s);if(k==null)return;m[k]=m[k]||{n:0,inc:0,pr:0};m[k].n++;m[k].inc+=s.total;m[k].pr+=s.total-s.cost*s.qty});return Object.entries(m)};
+ const P=g(s=>s.name).sort((a,b)=>b[1].pr-a[1].pr).slice(0,3);
+ T('Dato','Productos con más ganancia: '+P.map(([k,v])=>esc(k)+' ('+$m(v.pr)+')').join(', ')+'.');
+ const H=g(s=>new Date(s.ts).getHours()).sort((a,b)=>b[1].inc-a[1].inc).slice(0,2);
+ T('Dato','Horas con más ingresos: '+H.map(([k,v])=>k+':00 ('+v.n+' ventas)').join(' y ')+'. Considera salir antes de las '+Math.max(0,H[0][0]-1)+':00.');
+ const D=g(s=>DAYS[new Date(s.ts).getDay()]).sort((a,b)=>b[1].inc-a[1].inc).slice(0,2);
+ T('Dato','Días con más ingresos: '+D.map(([k,v])=>k+' ('+$m(v.inc)+')').join(' y ')+'.');
+ const Z=zones(A).slice(0,2);if(Z.length)T('Dato','Zonas con más ingresos (cuadrícula ~500 m): '+Z.map(([k,v])=>k+' ('+$m(v.inc)+', '+v.n+' ventas)').join(' | ')+'.');
+ const lim=Date.now()-14*864e5;
+ S.products.forEach(p=>{const u=sum(A.filter(s=>s.pid===p.id&&s.ts>=lim),s=>s.qty),avg=u/14;
+  if(avg>0&&p.stock/avg<3)T('Dato','Aumentar '+esc(p.name)+': vendes ~'+avg.toFixed(1)+'/día y quedan '+p.stock+' (alcanza ~'+(p.stock/avg).toFixed(1)+' días).');
+  else if(u===0&&p.stock>0)T('Dato','Reducir '+esc(p.name)+': sin ventas en 14 días y hay '+p.stock+' en inventario.')});
+ const bd={};A.forEach(s=>{const k=day(s.ts);bd[k]=(bd[k]||0)+s.total});
+ const ds=Object.entries(bd).map(([k,v])=>({d:new Date(k+'T12:00:00'),v})),av=a=>sum(a,x=>x.v)/a.length;
+ flags(new Date()).forEach(f=>{const a=ds.filter(x=>flags(x.d).includes(f)),b=ds.filter(x=>!flags(x.d).includes(f));
+  if(a.length>=3&&b.length>=3)T('Dato','Días de '+f+': '+$m(av(a))+' promedio vs '+$m(av(b))+' otros días (solo cuenta días con ventas registradas).');
+  else T('Estimación','Hoy es '+f+', pero aún no hay suficientes días registrados para comparar.')});
+ const rd={},dd={};A.forEach(s=>{if(s.rain==null)return;const k=day(s.ts);(s.rain?rd:dd)[k]=((s.rain?rd:dd)[k]||0)+s.total});
+ const ra=Object.values(rd),da=Object.values(dd);
+ if(ra.length>=3&&da.length>=3)T('Dato','Días con lluvia registrada: '+$m(sum(ra,x=>x)/ra.length)+' por día vs '+$m(sum(da,x=>x)/da.length)+' sin lluvia.');
+ if(S.wx&&S.wx.prob>=50)T('Estimación','Pronóstico de hoy: '+S.wx.prob+'% de probabilidad de lluvia. Ajusta tu salida o inventario.');
+ const ev=S.events.filter(e=>e.date>=day(Date.now())&&e.date<=day(Date.now()+7*864e5));
+ if(ev.length)T('Estimación','Eventos próximos que registraste: '+ev.map(e=>esc(e.name)+' ('+e.date+')').join(', ')+'. No hay datos propios para medir su efecto.');
+ return o}
+
+/* ================= NAVEGACIÓN ================= */
+let view='home',charts=[],map=null,F={from:'',to:'',pid:''},selR=null,wid=null,wl=null,tick=null;
+function go(v){view=v;charts.forEach(c=>c.destroy());charts=[];if(map){map.remove();map=null}
+ $('#v').innerHTML=({home:vHome,sales:vSales,route:vRoute,more:vMore})[v]();
+ document.querySelectorAll('nav button[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+ ({home:aHome,route:aRoute})[v]&&({home:aHome,route:aRoute})[v]();scrollTo(0,0)}
+
+/* ================= INICIO / DASHBOARD ================= */
+function wxHtml(){const w=S.wx;return w?'Clima en '+esc(S.cfg.place)+': <b>'+w.temp+' °C</b> ahora · máx. hoy '+w.max+' °C · lluvia '+w.prob+'% <span class="mut sm">(Open-Meteo, '+fdt(w.t)+')</span>':'<span class="mut">Clima no disponible (sin conexión o aún cargando).</span>'}
+function vHome(){const[a,b]=rng(),L=inR(a,b),P=inR(a-(b-a),a),s=stat(L),p=stat(P);
+ const best=(()=>{const m={};L.forEach(x=>{const k=day(x.ts);m[k]=(m[k]||0)+x.total-x.cost*x.qty});return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]})();
+ const hr={};L.forEach(x=>{const h=new Date(x.ts).getHours();hr[h]=(hr[h]||0)+x.total});const bh=Object.entries(hr).sort((a,b)=>b[1]-a[1])[0];
+ const low=S.products.filter(x=>x.stock<=x.min),Z=zones(L).slice(0,5),now=Date.now(),n=new Date();
+ const fx=(a,b)=>stat(inR(a,b)).inc,d0=+new Date(n.getFullYear(),n.getMonth(),n.getDate()),wk=d0-((n.getDay()+6)%7)*864e5;
+ const demo=S.sales.some(x=>x.demo)||S.products.some(x=>x.demo);
+ return`<h2>Resumen</h2>${demo?'<div class="banner">Hay datos de <b>DEMOSTRACIÓN</b> mezclados. Elimínalos en Más → Datos.</div>':''}
+ ${low.length?'<div class="banner">Inventario bajo: '+low.map(x=>esc(x.name)+' ('+x.stock+')').join(', ')+'</div>':''}
+ <div class="chips">${[['today','Hoy'],['week','Semana'],['month','Mes'],['custom','Personalizado']].map(([k,t])=>'<button class="chip '+(R.k===k?'on':'')+'" data-a="rng" data-id="'+k+'">'+t+'</button>').join('')}</div>
+ ${R.k==='custom'?'<div class="row"><label>Desde<input type="date" id="r1" value="'+R.from+'"></label><label>Hasta<input type="date" id="r2" value="'+R.to+'"></label></div>':''}
+ <div class="card" id="wx">${wxHtml()}</div>
+ <div class="grid">
+  <div class="stat"><small>Ventas</small><b>${s.n}</b><small>${delta(s.n,p.n)} vs periodo previo</small></div>
+  <div class="stat"><small>Ingresos</small><b>${$m(s.inc)}</b><small>${delta(s.inc,p.inc)}</small></div>
+  <div class="stat"><small>Ganancia estimada</small><b>${$m(s.pr)}</b><small>${delta(s.pr,p.pr)}</small></div>
+  <div class="stat"><small>Unidades</small><b>${s.u}</b><small>${delta(s.u,p.u)}</small></div>
+  <div class="stat"><small>Más vendido</small><b>${s.top?esc(s.top[0]):'—'}</b><small>${s.top?s.top[1]+' uds':''}</small></div>
+  <div class="stat"><small>Entre ventas</small><b>${s.gap?dur(s.gap):'—'}</b><small>mismo día</small></div>
+  <div class="stat"><small>Mejor hora</small><b>${bh?bh[0]+':00':'—'}</b><small>${bh?$m(bh[1]):''}</small></div>
+  <div class="stat"><small>Día más rentable</small><b>${best?best[0].slice(5):'—'}</b><small>${best?$m(best[1]):''}</small></div>
+ </div>
+ <div class="card"><h3>Comparativa de ingresos</h3><div class="row"><div>Hoy: <b>${$m(fx(d0,d0+864e5))}</b><br><span class="mut sm">ayer ${$m(fx(d0-864e5,d0))}</span></div><div>Semana: <b>${$m(fx(wk,wk+7*864e5))}</b><br><span class="mut sm">anterior ${$m(fx(wk-7*864e5,wk))}</span></div></div>
+ <div class="sm" style="margin-top:8px">Mes: <b>${$m(fx(+new Date(n.getFullYear(),n.getMonth(),1),+new Date(n.getFullYear(),n.getMonth()+1,1)))}</b> <span class="mut">· mes anterior ${$m(fx(+new Date(n.getFullYear(),n.getMonth()-1,1),+new Date(n.getFullYear(),n.getMonth(),1)))}</span></div></div>
+ <div class="card"><h3>Ingresos por hora</h3><canvas id="c1"></canvas></div>
+ <div class="card"><h3>Por día de la semana</h3><canvas id="c2"></canvas></div>
+ <div class="card"><h3>Evolución por día</h3><canvas id="c3"></canvas></div>
+ <div class="card"><h3>Zonas con más ventas</h3>${Z.length?Z.map(([k,v])=>'<div class="li"><span>~'+k+'</span><span>'+v.n+' ventas · <b>'+$m(v.inc)+'</b></span></div>').join(''):'<p class="mut">Sin ventas con ubicación en este periodo.</p>'}</div>
+ <h3>Mapa de rutas y ventas</h3><div id="map"></div>
+ <div class="card"><h3>Recomendaciones</h3><p class="mut sm">Reglas y cálculos sobre tu historial. <span class="tag dato">Dato</span> sale de tus ventas; <span class="tag est">Estimación</span> es una suposición.</p>
+ ${recs().map(r=>'<div class="li"><span><span class="tag '+(r.t==='Dato'?'dato':'est')+'">'+r.t+'</span>'+r.x+'</span></div>').join('')}</div>`}
+function aHome(){const[a,b]=rng(),L=inR(a,b);
+ const css=getComputedStyle(document.documentElement),mut=css.getPropertyValue('--mut').trim(),pri=css.getPropertyValue('--pri').trim(),acc=css.getPropertyValue('--acc').trim();
+ Chart.defaults.color=mut;
+ const mk=(id,cfg)=>{const c=$('#'+id);if(c)charts.push(new Chart(c,cfg))};
+ const h=Array(24).fill(0);L.forEach(s=>h[new Date(s.ts).getHours()]+=s.total);
+ mk('c1',{type:'bar',data:{labels:h.map((_,i)=>i),datasets:[{label:'Ingresos',data:h,backgroundColor:pri}]},options:{plugins:{legend:{display:false}}}});
+ const w=Array(7).fill(0);L.forEach(s=>w[(new Date(s.ts).getDay()+6)%7]+=s.total);
+ mk('c2',{type:'bar',data:{labels:['L','M','X','J','V','S','D'],datasets:[{label:'Ingresos',data:w,backgroundColor:acc}]},options:{plugins:{legend:{display:false}}}});
+ const d={};L.forEach(s=>{const k=day(s.ts);d[k]=d[k]||[0,0];d[k][0]+=s.total;d[k][1]+=s.total-s.cost*s.qty});const ks=Object.keys(d).sort();
+ mk('c3',{type:'line',data:{labels:ks.map(k=>k.slice(5)),datasets:[{label:'Ingresos',data:ks.map(k=>d[k][0]),borderColor:pri},{label:'Ganancia',data:ks.map(k=>d[k][1]),borderColor:acc}]}});
+ drawMap($('#map'),S.routes.filter(r=>r.end?r.end>=a&&r.start<b:true),L);
+ if(!S.wx||Date.now()-S.wx.t>36e5)fetchWx()}
+async function fetchWx(){try{const c=S.cfg,r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lng+'&current=temperature_2m,precipitation&daily=precipitation_probability_max,temperature_2m_max&timezone=auto&forecast_days=2');if(!r.ok)throw 0;const j=await r.json();
+ S.wx={t:Date.now(),temp:j.current.temperature_2m,prec:j.current.precipitation,prob:j.daily.precipitation_probability_max[0],max:j.daily.temperature_2m_max[0]};save();const e=$('#wx');if(e)e.innerHTML=wxHtml()}catch(e){}}
+const COL=['#0f766e','#7c3aed','#dc2626','#2563eb','#ea580c','#059669'];
+function drawMap(el,routes,sales){if(!el)return;if(!window.L){el.innerHTML='<p class="mut pad">No se pudo cargar el mapa (¿sin conexión?).</p>';return}
+ map=L.map(el).setView([S.cfg.lat,S.cfg.lng],13);
+ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+ const bd=[];routes.forEach((r,i)=>{const pts=r.pts.map(p=>[p.lat,p.lng]);if(pts.length){L.polyline(pts,{color:COL[i%COL.length],weight:4}).addTo(map).bindPopup(esc(r.name));bd.push(...pts)}});
+ sales.filter(s=>s.lat!=null).forEach(s=>{L.circleMarker([s.lat,s.lng],{radius:7,color:'#fff',weight:2,fillColor:'#f59e0b',fillOpacity:1}).addTo(map).bindPopup(esc(s.name)+' ×'+s.qty+'<br>'+$m(s.total)+'<br>'+fdt(s.ts));bd.push([s.lat,s.lng])});
+ if(bd.length)map.fitBounds(bd,{padding:[20,20],maxZoom:17});setTimeout(()=>map&&map.invalidateSize(),60)}
+
+/* ================= VENTAS ================= */
+const salesF=()=>S.sales.filter(s=>(!F.from||s.ts>=+new Date(F.from+'T00:00'))&&(!F.to||s.ts<+new Date(F.to+'T00:00')+864e5)&&(!F.pid||s.pid===F.pid));
+function vSales(){const L=salesF().sort((a,b)=>b.ts-a.ts);
+ return`<h2>Ventas</h2><div class="card"><div class="row"><label>Desde<input type="date" id="f1" value="${F.from}"></label><label>Hasta<input type="date" id="f2" value="${F.to}"></label></div>
+ <label>Producto<select id="f3"><option value="">Todos</option>${S.products.map(p=>'<option value="'+p.id+'" '+(F.pid===p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('')}</select></label>
+ <button class="btn p" data-a="csv">Exportar CSV (${L.length})</button></div>
+ <div class="card">${L.length?L.slice(0,200).map(s=>'<div class="li"><div>'+(s.demo?'<span class="tag demo">DEMO</span>':'')+'<b>'+esc(s.name)+'</b> ×'+s.qty+' · '+$m(s.total)+'<br><span class="mut sm">'+fdt(s.ts)+' · '+esc(s.pay)+(s.client?' · '+esc(s.client):'')+(s.lat!=null?' · con GPS':'')+(s.notes?'<br>'+esc(s.notes):'')+'</span></div><div><button class="btn s" data-a="editsale" data-id="'+s.id+'">Editar</button><button class="btn s d" data-a="delsale" data-id="'+s.id+'">Borrar</button></div></div>').join(''):'<p class="mut">No hay ventas con estos filtros. Toca + para registrar una.</p>'}</div>`}
+function saleForm(id){if(!S.products.length){toast('Primero crea un producto en Más → Productos',1);go('more');return}
+ const s=id?S.sales.find(x=>x.id===id):null;
+ sheet(`<h3>${s?'Editar venta':'Nueva venta'}</h3><form data-f="sale" data-id="${id||''}">
+ <label>Producto<select name="pid" required>${S.products.map(p=>'<option value="'+p.id+'" data-pr="'+p.price+'" '+(s&&s.pid===p.id?'selected':'')+'>'+esc(p.name)+' (stock '+p.stock+')</option>').join('')}</select></label>
+ <div class="row"><label>Cantidad<input name="qty" type="number" min="1" step="1" required value="${s?s.qty:1}"></label><label>Precio unitario<input name="price" type="number" min="0" step="0.01" required value="${s?s.price:S.products[0].price}"></label></div>
+ <p>Total: <b id="tot">${$m(s?s.total:S.products[0].price)}</b></p>
+ <label>Pago<select name="pay">${['Efectivo','Transferencia','Tarjeta','Otro'].map(x=>'<option '+(s&&s.pay===x?'selected':'')+'>'+x+'</option>').join('')}</select></label>
+ <label>Cliente (opcional)<input name="client" maxlength="80" value="${s?esc(s.client):''}"></label>
+ <label>Notas<textarea name="notes" rows="2">${s?esc(s.notes):''}</textarea></label>
+ <label><input type="checkbox" name="gps" ${s?'':'checked'}>Guardar mi ubicación GPS (se pedirá permiso)</label>
+ <button class="btn p" type="submit">Guardar venta</button><button class="btn" type="button" data-a="close">Cancelar</button></form>`)}
+async function saveSale(f,id){const d=new FormData(f),p=S.products.find(x=>x.id===d.get('pid')),qty=parseInt(d.get('qty')),price=num(d.get('price'));
+ if(!p||!(qty>0)||!(price>=0))return toast('Revisa producto, cantidad y precio',1);
+ const old=id?S.sales.find(x=>x.id===id):null,avail=p.stock+(old&&old.pid===p.id?old.qty:0);
+ if(qty>avail&&!confirm('Solo hay '+avail+' en inventario. ¿Registrar de todos modos?'))return;
+ let pos=null;if(d.get('gps')){try{pos=await getPos()}catch(e){toast('Sin GPS: '+e.message+'. Se guarda sin ubicación.',1)}}
+ if(old){const op=S.products.find(x=>x.id===old.pid);if(op){op.stock+=old.qty;op.u=Date.now()}}
+ p.stock=Math.max(0,p.stock-qty);p.u=Date.now();
+ const rec={id:old?old.id:uid(),ts:old?old.ts:Date.now(),pid:p.id,name:p.name,qty,price,cost:old&&old.pid===p.id?old.cost:p.cost,total:+(qty*price).toFixed(2),
+  client:d.get('client').trim(),notes:d.get('notes').trim(),pay:d.get('pay'),lat:pos?pos.lat:old?old.lat:null,lng:pos?pos.lng:old?old.lng:null,
+  rid:old?old.rid:(ar()&&ar().status!=='done'?S.active:null),rain:old?old.rain:wxRain(),demo:old?old.demo:false,u:Date.now()};
+ if(old)Object.assign(old,rec);else S.sales.push(rec);
+ save();closeSheet();toast('Venta guardada');go(view)}
+const getPos=()=>new Promise((ok,no)=>{if(!navigator.geolocation)return no(new Error('el navegador no tiene GPS'));navigator.geolocation.getCurrentPosition(p=>ok({lat:p.coords.latitude,lng:p.coords.longitude}),e=>no(new Error(e.message)),{enableHighAccuracy:true,timeout:10000,maximumAge:15000})});
+function csv(){const L=salesF().sort((a,b)=>a.ts-b.ts);if(!L.length)return toast('No hay ventas para exportar',1);
+ const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"',H=['fecha','hora','producto','cantidad','precio','total','costo_total','ganancia','pago','cliente','notas','lat','lng','demo'];
+ const rows=L.map(s=>{const d=new Date(s.ts);return[day(s.ts),d.toTimeString().slice(0,5),s.name,s.qty,s.price,s.total,+(s.cost*s.qty).toFixed(2),+(s.total-s.cost*s.qty).toFixed(2),s.pay,s.client,s.notes,s.lat,s.lng,s.demo?'si':'no'].map(q).join(',')});
+ dl('ventas_'+day(Date.now())+'.csv','\ufeff'+H.join(',')+'\n'+rows.join('\n'),'text/csv;charset=utf-8')}
+
+/* ================= RUTAS GPS ================= */
+const rDist=r=>{let t=0;for(let i=1;i<r.pts.length;i++)t+=hav(r.pts[i-1],r.pts[i]);return t};
+const rDur=r=>r.acc+(r.status==='tracking'?Date.now()-r.seg:0);
+const rSales=r=>S.sales.filter(s=>s.rid===r.id).length;
+function track(){if(!navigator.geolocation)return toast('Este navegador no tiene GPS',1);
+ wid=navigator.geolocation.watchPosition(p=>{const r=ar();if(!r||r.status!=='tracking')return;const q={id:uid(),lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()},l=r.pts[r.pts.length-1];
+  if(l&&hav(l,q)<8&&q.t-l.t<30000)return;r.pts.push(q);r.u=Date.now();save();if(view==='route')live()},
+  e=>toast('GPS: '+e.message,1),{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+ if(navigator.wakeLock)navigator.wakeLock.request('screen').then(l=>wl=l).catch(()=>{})}
+function untrack(){if(wid!=null)navigator.geolocation.clearWatch(wid);wid=null;if(wl){wl.release().catch(()=>{});wl=null}}
+function rAct(a){let r=ar();
+ if(a==='start'){if(r)return;r={id:uid(),name:'Ruta '+fdt(Date.now()),start:Date.now(),end:null,acc:0,seg:Date.now(),status:'tracking',pts:[],u:Date.now()};S.routes.push(r);S.active=r.id;track()}
+ else if(r&&a==='pause'){r.acc+=Date.now()-r.seg;r.status='paused';untrack()}
+ else if(r&&a==='resume'){r.seg=Date.now();r.status='tracking';track()}
+ else if(r&&a==='end'){if(r.status==='tracking')r.acc+=Date.now()-r.seg;r.status='done';r.end=Date.now();S.active=null;untrack()}
+ if(r)r.u=Date.now();save();go('route')}
+function vRoute(){const r=ar(),past=S.routes.filter(x=>x.status==='done').sort((a,b)=>b.start-a.start).slice(0,15);
+ return`<h2>Recorrido</h2><div class="card"><div class="grid" style="margin:0 0 10px"><div class="stat"><small>Estado</small><b>${r?(r.status==='tracking'?'Grabando':'En pausa'):'Detenido'}</b></div>
+ <div class="stat"><small>Distancia aprox.</small><b id="rd">${r?km(rDist(r)):'—'}</b></div><div class="stat"><small>Duración</small><b id="rt">${r?dur(rDur(r)):'—'}</b></div><div class="stat"><small>Ventas / puntos</small><b id="rs">${r?rSales(r)+' / '+r.pts.length:'—'}</b></div></div>
+ ${!r?'<button class="btn p" data-a="rstart">Iniciar recorrido</button>':(r.status==='tracking'?'<button class="btn" data-a="rpause">Pausar</button>':'<button class="btn p" data-a="rresume">Reanudar</button>')+'<button class="btn d" data-a="rend">Finalizar</button>'}
+ <p class="sm mut"><b>Importante:</b> el GPS continuo con la pantalla bloqueada o la app en segundo plano <b>no está garantizado en iPhone</b> (Safari y las PWA suspenden la ubicación). Mantén la pantalla encendida y esta pestaña abierta; la app solicita mantenerla despierta cuando el navegador lo permite. Los puntos se registran solo mientras grabas.</p></div>
+ <div id="map"></div>
+ <div class="card"><h3>Recorridos anteriores</h3>${past.length?past.map(x=>'<div class="li"><div><b>'+esc(x.name)+'</b><br><span class="mut sm">'+km(rDist(x))+' · '+dur(x.acc)+' · '+rSales(x)+' ventas</span></div><div><button class="btn s" data-a="rview" data-id="'+x.id+'">Ver</button><button class="btn s d" data-a="rdel" data-id="'+x.id+'">Borrar</button></div></div>').join(''):'<p class="mut">Aún no hay recorridos finalizados.</p>'}</div>`}
+function aRoute(){const r=ar(),show=selR?S.routes.filter(x=>x.id===selR):(r?[r]:S.routes.filter(x=>x.status==='done').slice(-3));
+ drawMap($('#map'),show,S.sales.filter(s=>show.some(x=>x.id===s.rid)));clearInterval(tick);tick=setInterval(()=>{if(view!=='route'){clearInterval(tick);return}live()},1000)}
+function live(){const r=ar();if(!r)return;const a=$('#rd');if(a){a.textContent=km(rDist(r));$('#rt').textContent=dur(rDur(r));$('#rs').textContent=rSales(r)+' / '+r.pts.length}}
+
+/* ================= MÁS: productos, eventos, datos, nube, ajustes ================= */
+function vMore(){const lim=Date.now()-30*864e5;
+ return`<h2>Más</h2><div class="card"><h3>Productos e inventario</h3><button class="btn p s" data-a="newprod">Nuevo producto</button>
+ ${S.products.length?S.products.map(p=>{const rot=sum(S.sales.filter(s=>s.pid===p.id&&s.ts>=lim),s=>s.qty);return'<div class="li"><div>'+(p.demo?'<span class="tag demo">DEMO</span>':'')+'<b>'+esc(p.name)+'</b> '+(p.stock<=p.min?'<span class="bad sm">stock bajo</span>':'')+'<br><span class="mut sm">Precio '+$m(p.price)+' · costo '+$m(p.cost)+' · stock '+p.stock+' (mín. '+p.min+') · rotación 30 d: '+rot+'</span></div><div><button class="btn s" data-a="editprod" data-id="'+p.id+'">Editar</button><button class="btn s d" data-a="delprod" data-id="'+p.id+'">Borrar</button></div></div>'}).join(''):'<p class="mut">Crea tu primer producto con su costo y precio.</p>'}</div>
+ <div class="card"><h3>Eventos locales</h3><form data-f="event"><div class="row"><label>Evento<input name="name" required maxlength="80"></label><label>Fecha<input name="date" type="date" required></label></div><label>Lugar / notas<input name="notes" maxlength="120"></label><button class="btn s p" type="submit">Agregar evento</button><a class="btn s" style="text-decoration:none;display:inline-block" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent('eventos '+S.cfg.place)}">Buscar eventos en la web</a></form>
+ ${S.events.sort((a,b)=>a.date<b.date?-1:1).map(e=>'<div class="li"><span>'+e.date+' · <b>'+esc(e.name)+'</b> <span class="mut sm">'+esc(e.notes)+'</span></span><button class="btn s d" data-a="delev" data-id="'+e.id+'">×</button></div>').join('')}</div>
+ <div class="card"><h3>Datos y respaldo</h3><button class="btn s" data-a="bkup">Respaldar JSON</button><label class="btn s" style="display:inline-block">Restaurar JSON<input type="file" accept=".json,application/json" id="rest" hidden></label>
+ <button class="btn s" data-a="demo">Cargar datos DEMO</button><button class="btn s d" data-a="undemo">Eliminar datos DEMO</button><p class="sm mut">Los datos demo se marcan con la etiqueta DEMO. El CSV se exporta desde la pestaña Ventas.</p></div>
+ <div class="card"><h3>Ajustes</h3><form data-f="cfg"><label>Ubicación inicial (nombre)<input name="place" value="${esc(S.cfg.place)}"></label>
+ <div class="row"><label>Latitud<input name="lat" type="number" step="any" value="${S.cfg.lat}"></label><label>Longitud<input name="lng" type="number" step="any" value="${S.cfg.lng}"></label></div>
+ <label>Tema<select name="theme">${[['auto','Automático'],['light','Claro'],['dark','Oscuro']].map(([v,t])=>'<option value="'+v+'" '+(S.cfg.theme===v?'selected':'')+'>'+t+'</option>').join('')}</select></label>
+ <h3>Supabase (opcional)</h3><label>URL del proyecto<input name="url" value="${esc(S.cfg.url)}" placeholder="https://xxxx.supabase.co"></label><label>Clave pública anon / publishable<input name="key" value="${esc(S.cfg.key)}" autocomplete="off"></label>
+ <p class="sm mut">Nunca pegues la clave service_role. ${S.cfg.last?'Última sincronización exitosa: '+fdt(S.cfg.last):'La sincronización aún no se ha verificado.'}</p>
+ <button class="btn p s" type="submit">Guardar ajustes</button><button class="btn s" type="button" data-a="sql">Ver SQL de tablas y RLS</button></form>
+ <form data-f="auth" style="margin-top:10px"><div class="row"><label>Correo<input name="email" type="email" autocomplete="email"></label><label>Contraseña<input name="pw" type="password" minlength="6" autocomplete="current-password"></label></div>
+ <button class="btn s" type="submit" data-m="in">Entrar</button><button class="btn s" type="submit" data-m="up">Registrarme</button><button class="btn s" type="button" data-a="out">Salir</button><button class="btn s p" type="button" data-a="sync">Sincronizar ahora</button></form></div>`}
+function prodForm(id){const p=id?S.products.find(x=>x.id===id):null;
+ sheet(`<h3>${p?'Editar':'Nuevo'} producto</h3><form data-f="prod" data-id="${id||''}"><label>Nombre<input name="name" required maxlength="60" value="${p?esc(p.name):''}"></label>
+ <div class="row"><label>Precio de venta<input name="price" type="number" min="0" step="0.01" required value="${p?p.price:''}"></label><label>Costo unitario<input name="cost" type="number" min="0" step="0.01" required value="${p?p.cost:''}"></label></div>
+ <div class="row"><label>Existencias<input name="stock" type="number" min="0" step="1" required value="${p?p.stock:0}"></label><label>Alerta de stock bajo en<input name="min" type="number" min="0" step="1" required value="${p?p.min:3}"></label></div>
+ <button class="btn p" type="submit">Guardar</button><button class="btn" type="button" data-a="close">Cancelar</button></form>`)}
+
+/* ================= DEMO ================= */
+function demo(){if(S.sales.some(s=>s.demo)||S.products.some(p=>p.demo))return toast('Ya hay datos demo',1);
+ const ps=[['Demo · Producto A',30,12,40],['Demo · Producto B',45,20,25],['Demo · Producto C',20,8,60]].map(([name,price,cost,stock])=>({id:uid(),name,price,cost,stock,min:5,demo:true,u:Date.now()}));
+ S.products.push(...ps);let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647,hrs=[10,11,12,13,17,18,18,19,20];
+ for(let i=0;i<70;i++){const d=new Date();d.setDate(d.getDate()-Math.floor(rnd()*28));d.setHours(hrs[Math.floor(rnd()*hrs.length)],Math.floor(rnd()*60),0,0);if(d>new Date())continue;
+  const p=ps[Math.floor(rnd()*3)],q=1+Math.floor(rnd()*3);S.sales.push({id:uid(),ts:+d,pid:p.id,name:p.name,qty:q,price:p.price,cost:p.cost,total:p.price*q,client:'',notes:'',pay:rnd()>.4?'Efectivo':'Transferencia',lat:S.cfg.lat+(rnd()-.5)*.04,lng:S.cfg.lng+(rnd()-.5)*.04,rid:null,rain:null,demo:true,u:Date.now()})}
+ save();toast('Datos demo cargados');go(view)}
+function undemo(){const ids=S.sales.filter(s=>s.demo).map(s=>s.id),pi=S.products.filter(p=>p.demo).map(p=>p.id);
+ ids.forEach(i=>S.del.push({t:'sales',id:i}));pi.forEach(i=>S.del.push({t:'products',id:i}));
+ S.sales=S.sales.filter(s=>!s.demo);S.products=S.products.filter(p=>!p.demo);save();toast('Datos demo eliminados');go(view)}
+
+/* ================= SUPABASE (opcional) ================= */
+const SQL=`-- Ejecuta en Supabase → SQL Editor
+create table public.profiles(id uuid primary key references auth.users(id) on delete cascade, email text, created_at timestamptz default now());
+create table public.products(id uuid primary key, user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text not null, price numeric not null default 0, cost numeric not null default 0, stock integer not null default 0, min_stock integer not null default 0, demo boolean default false, u bigint not null default 0);
+create table public.sales(id uuid primary key, user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, ts bigint not null, product_id uuid, product_name text, qty integer not null, price numeric not null, cost numeric not null default 0, total numeric not null, client text, notes text, pay text, lat double precision, lng double precision, route_id uuid, rain boolean, demo boolean default false, u bigint not null default 0);
+create table public.routes(id uuid primary key, user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text, started bigint, ended bigint, acc bigint default 0, status text, u bigint not null default 0);
+create table public.route_points(id uuid primary key, user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, route_id uuid not null references public.routes(id) on delete cascade, lat double precision not null, lng double precision not null, t bigint not null);
+create table public.events(id uuid primary key, user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text not null, date text, notes text, u bigint not null default 0);
+-- RLS: cada usuario solo ve y modifica sus filas
+alter table public.profiles enable row level security;
+create policy "own profile" on public.profiles for all to authenticated using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
+do $$ declare t text; begin foreach t in array array['products','sales','routes','route_points','events'] loop
+ execute format('alter table public.%I enable row level security', t);
+ execute format('create policy "own rows" on public.%I for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)', t);
+end loop; end $$;
+-- Perfil automático al registrarse
+create function public.handle_new_user() returns trigger language plpgsql security definer set search_path = '' as $$ begin insert into public.profiles(id,email) values (new.id,new.email); return new; end $$;
+create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();`;
+const MAP={products:[['id','id'],['name','name'],['price','price'],['cost','cost'],['stock','stock'],['min','min_stock'],['demo','demo'],['u','u']],
+ sales:[['id','id'],['ts','ts'],['pid','product_id'],['name','product_name'],['qty','qty'],['price','price'],['cost','cost'],['total','total'],['client','client'],['notes','notes'],['pay','pay'],['lat','lat'],['lng','lng'],['rid','route_id'],['rain','rain'],['demo','demo'],['u','u']],
+ routes:[['id','id'],['name','name'],['start','started'],['end','ended'],['acc','acc'],['status','status'],['u','u']],
+ events:[['id','id'],['name','name'],['date','date'],['notes','notes'],['u','u']]};
+let sb=null,sbKey='';
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('No se pudo cargar Supabase (¿sin conexión?)'));document.head.appendChild(s)})}
+async function client(){const k=S.cfg.url+'|'+S.cfg.key;if(!S.cfg.url||!S.cfg.key)throw new Error('Falta la URL o la clave en Ajustes');
+ if(/service_role/i.test(S.cfg.key))throw new Error('No uses la clave service_role');
+ if(!window.supabase)await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js');
+ if(!sb||sbKey!==k){sb=window.supabase.createClient(S.cfg.url,S.cfg.key);sbKey=k}return sb}
+async function sync(){const c=await client(),{data:{session}}=await c.auth.getSession();if(!session)throw new Error('Inicia sesión primero');const U=session.user.id;
+ /* 1) eliminaciones pendientes */
+ for(const t of['sales','products','events','routes']){const ids=S.del.filter(d=>d.t===t).map(d=>d.id);if(ids.length){const{error}=await c.from(t).delete().in('id',ids);if(error)throw error}}
+ S.del=[];
+ /* 2) para cada tabla: traer remoto, combinar por id (gana el más reciente 'u') y subir lo local más nuevo (upsert por id → sin duplicados) */
+ const arr={products:S.products,sales:S.sales,routes:S.routes,events:S.events};
+ for(const t of['products','routes','sales','events']){
+  const rem=[];for(let f=0;;f+=1000){const{data,error}=await c.from(t).select('*').range(f,f+999);if(error)throw error;rem.push(...data);if(data.length<1000)break}
+  const rm=new Map(rem.map(r=>[r.id,r])),loc=arr[t],lm=new Map(loc.map(x=>[x.id,x]));
+  rem.forEach(r=>{const o={};MAP[t].forEach(([l,k])=>o[l]=r[k]);if(t==='routes')o.pts=[];if(t!=='products'&&t!=='routes')o.demo=!!o.demo;
+   const x=lm.get(r.id);if(!x){if(t==='routes')o.seg=Date.now();loc.push(o)}else if((r.u||0)>(x.u||0)){const pts=x.pts;Object.assign(x,o);if(pts)x.pts=pts}});
+  const up=loc.filter(x=>{const r=rm.get(x.id);return!r||(x.u||0)>(r.u||0)}).map(x=>{const r={user_id:U};MAP[t].forEach(([l,k])=>r[k]=x[l]==null?null:x[l]);return r});
+  for(let i=0;i<up.length;i+=300){const{error}=await c.from(t).upsert(up.slice(i,i+300),{onConflict:'id'});if(error)throw error}
+  if(t==='routes'){ /* puntos GPS: se suben una sola vez (marca s) y se bajan los que falten */
+   for(const r of S.routes){const np=r.pts.filter(p=>!p.s);for(let i=0;i<np.length;i+=500){const ch=np.slice(i,i+500),{error}=await c.from('route_points').upsert(ch.map(p=>({id:p.id,user_id:U,route_id:r.id,lat:p.lat,lng:p.lng,t:p.t})),{onConflict:'id'});if(error)throw error;ch.forEach(p=>p.s=1)}}
+   const have=new Set(S.routes.flatMap(r=>r.pts.map(p=>p.id)));
+   for(let f=0;;f+=1000){const{data,error}=await c.from('route_points').select('*').order('t').range(f,f+999);if(error)throw error;
+    data.forEach(p=>{const r=S.routes.find(x=>x.id===p.route_id);if(r&&!have.has(p.id)){r.pts.push({id:p.id,lat:p.lat,lng:p.lng,t:p.t,s:1})}});if(data.length<1000)break}
+   S.routes.forEach(r=>r.pts.sort((a,b)=>a.t-b.t))}}
+ S.cfg.last=Date.now();save()}
+
+/* ================= EVENTOS DE UI (delegación) ================= */
+const A={
+ go:(i,b)=>{selR=null;go(b.dataset.v)},close:closeSheet,newsale:()=>saleForm(),
+ rng:i=>{R.k=i;go('home')},editsale:i=>saleForm(i),
+ delsale:i=>{if(!confirm('¿Borrar esta venta? Se devolverá el stock.'))return;const s=S.sales.find(x=>x.id===i),p=S.products.find(x=>s&&x.id===s.pid);if(p){p.stock+=s.qty;p.u=Date.now()}S.sales=S.sales.filter(x=>x.id!==i);S.del.push({t:'sales',id:i});save();go('sales')},
+ csv,rstart:()=>rAct('start'),rpause:()=>rAct('pause'),rresume:()=>rAct('resume'),rend:()=>{if(confirm('¿Finalizar el recorrido?'))rAct('end')},
+ rview:i=>{selR=i;go('route')},rdel:i=>{if(!confirm('¿Borrar este recorrido?'))return;S.routes=S.routes.filter(x=>x.id!==i);S.del.push({t:'routes',id:i});save();selR=null;go('route')},
+ newprod:()=>prodForm(),editprod:i=>prodForm(i),
+ delprod:i=>{if(!confirm('¿Borrar producto? Las ventas pasadas se conservan.'))return;S.products=S.products.filter(x=>x.id!==i);S.del.push({t:'products',id:i});save();go('more')},
+ delev:i=>{S.events=S.events.filter(x=>x.id!==i);S.del.push({t:'events',id:i});save();go('more')},
+ bkup:()=>{const o=JSON.parse(JSON.stringify(S));o.cfg.key='';o.cfg.url='';dl('rutaventas_respaldo_'+day(Date.now())+'.json',JSON.stringify(o),'application/json')},
+ demo,undemo,sql:()=>sheet('<h3>SQL para Supabase</h3><textarea class="sql" readonly>'+esc(SQL)+'</textarea><button class="btn p" data-a="copysql">Copiar</button><button class="btn" data-a="close">Cerrar</button>'),
+ copysql:()=>{const t=$('textarea.sql');t.select();navigator.clipboard?navigator.clipboard.writeText(t.value).then(()=>toast('SQL copiado')).catch(()=>toast('Copia manualmente el texto',1)):document.execCommand('copy')},
+ out:async()=>{try{const c=await client();await c.auth.signOut();toast('Sesión cerrada')}catch(e){toast(e.message,1)}},
+ sync:async()=>{toast('Sincronizando…');try{await sync();toast('Sincronización completada');go('more')}catch(e){toast('Error al sincronizar: '+(e.message||e),1)}}};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&A[b.dataset.a])A[b.dataset.a](b.dataset.id,b)});
+let sub=null;document.addEventListener('click',e=>{const b=e.target.closest('button[data-m]');if(b)sub=b.dataset.m});
+document.addEventListener('submit',async e=>{const f=e.target.closest('form[data-f]');if(!f)return;e.preventDefault();const d=new FormData(f),k=f.dataset.f,id=f.dataset.id;
+ if(k==='sale')return saveSale(f,id);
+ if(k==='prod'){const price=num(d.get('price')),cost=num(d.get('cost')),stock=parseInt(d.get('stock')),min=parseInt(d.get('min')),name=d.get('name').trim();
+  if(!name||!(price>=0)||!(cost>=0)||!(stock>=0)||!(min>=0))return toast('Revisa los campos del producto',1);
+  const o=id?S.products.find(x=>x.id===id):null;if(o)Object.assign(o,{name,price,cost,stock,min,u:Date.now()});else S.products.push({id:uid(),name,price,cost,stock,min,demo:false,u:Date.now()});
+  save();closeSheet();toast('Producto guardado');go('more')}
+ if(k==='event'){S.events.push({id:uid(),name:d.get('name').trim(),date:d.get('date'),notes:d.get('notes').trim(),u:Date.now()});save();go('more')}
+ if(k==='cfg'){const lat=num(d.get('lat')),lng=num(d.get('lng'));if(!(Math.abs(lat)<=90)||!(Math.abs(lng)<=180))return toast('Coordenadas inválidas',1);
+  Object.assign(S.cfg,{place:d.get('place').trim()||S.cfg.place,lat,lng,theme:d.get('theme'),url:d.get('url').trim().replace(/\/$/,''),key:d.get('key').trim()});S.wx=null;save();theme();toast('Ajustes guardados');go('more')}
+ if(k==='auth'){try{const c=await client(),cr={email:d.get('email'),password:d.get('pw')};
+  const r=sub==='up'?await c.auth.signUp(cr):await c.auth.signInWithPassword(cr);if(r.error)throw r.error;
+  toast(sub==='up'&&!r.data.session?'Revisa tu correo para confirmar la cuenta':'Sesión iniciada')}catch(x){toast(x.message||'Error de autenticación',1)}}});
+document.addEventListener('input',e=>{const f=e.target.closest('form[data-f=sale]');if(!f)return;
+ if(e.target.name==='pid')f.price.value=e.target.selectedOptions[0].dataset.pr;
+ $('#tot').textContent=$m((parseInt(f.qty.value)||0)*(num(f.price.value)||0))});
+document.addEventListener('change',e=>{const t=e.target;
+ if(t.id==='f1'||t.id==='f2'||t.id==='f3'){F.from=$('#f1').value;F.to=$('#f2').value;F.pid=$('#f3').value;go('sales')}
+ if(t.id==='r1'||t.id==='r2'){R.from=$('#r1').value;R.to=$('#r2').value;go('home')}
+ if(t.id==='rest'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const o=JSON.parse(fr.result);if(!Array.isArray(o.sales)||!Array.isArray(o.products))throw new Error('Archivo no válido');
+  if(!confirm('Esto reemplaza tus datos actuales por el respaldo. ¿Continuar?'))return;const c=S.cfg;S=Object.assign(blank(),o,{cfg:Object.assign(c,{place:o.cfg&&o.cfg.place||c.place}),active:null});S.routes.forEach(r=>{if(r.status!=='done'){r.status='done';r.end=r.end||Date.now()}});save();toast('Respaldo restaurado');go('more')}catch(x){toast('No se pudo restaurar: '+x.message,1)}};fr.readAsText(t.files[0])}});
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',theme);
+go('home');
+</script>
+</body>
+</html>
