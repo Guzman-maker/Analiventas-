@@ -37,15 +37,17 @@ input[type=checkbox]{width:auto;margin-right:8px}
 .tag.dato{background:#d1fae5;color:#065f46}.tag.est{background:#fef3c7;color:#92400e}.tag.demo{background:#e0e7ff;color:#3730a3}
 .li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)}.li:last-child{border:0}
 .banner{background:#fef3c7;color:#92400e;border-radius:10px;padding:10px;margin-bottom:12px;font-size:.9rem}
-#map,.map{height:320px;border-radius:12px;border:1px solid var(--bd);margin-bottom:12px}
+#map,.map{height:320px;border-radius:14px;border:1px solid var(--bd);margin-bottom:14px;position:relative;z-index:0;isolation:isolate;overflow:hidden}
+.leaflet-container{font:inherit}
+.pin{width:32px;height:32px;border-radius:50%;background:var(--acc);color:#1b1200;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:800}
 canvas{max-height:220px}
-nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:5}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:2000}
 nav button{background:none;border:0;color:var(--mut);font:inherit;font-size:.75rem;padding:6px 0;cursor:pointer}
 nav button.on{color:var(--pri);font-weight:700}
-nav .fab{width:58px;height:58px;border-radius:50%;background:var(--acc);color:#1b1200;font-size:2rem;font-weight:700;margin:-26px auto 0;box-shadow:0 4px 12px rgba(0,0,0,.25);display:block;line-height:1}
-.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10;display:flex;align-items:flex-end;justify-content:center}
+nav .fab{width:58px;height:58px;border-radius:50%;background:var(--acc);color:#1b1200;font-size:2rem;font-weight:700;margin:-30px auto 0;border:4px solid var(--card);box-shadow:0 4px 12px rgba(0,0,0,.3);display:block;line-height:1;padding:0}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:flex-end;justify-content:center}
 .sheet>div{background:var(--card);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
-#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;display:none;max-width:90%}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:4000;display:none;max-width:90%}
 #toast.e{background:var(--bad);color:#fff}
 textarea.sql{height:140px;font:12px/1.3 ui-monospace,monospace}
 @media(prefers-reduced-motion:no-preference){.sheet>div{animation:up .18s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.5}}}
@@ -208,12 +210,25 @@ function aHome(){const[a,b]=rng(),L=inR(a,b);
 async function fetchWx(){try{const c=S.cfg,r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lng+'&current=temperature_2m,precipitation&daily=precipitation_probability_max,temperature_2m_max&timezone=auto&forecast_days=2');if(!r.ok)throw 0;const j=await r.json();
  S.wx={t:Date.now(),temp:j.current.temperature_2m,prec:j.current.precipitation,prob:j.daily.precipitation_probability_max[0],max:j.daily.temperature_2m_max[0]};save();const e=$('#wx');if(e)e.innerHTML=wxHtml()}catch(e){}}
 const COL=['#0f766e','#7c3aed','#dc2626','#2563eb','#ea580c','#059669'];
+let routeLine=null,meMk=null,meCi=null,lastPos=null;
+/* Detalle de una venta para el globo del mapa */
+const saleDetail=s=>'<div style="margin-bottom:6px"><b>'+esc(s.name)+'</b><br>Cantidad: '+s.qty+' × '+$m(s.price)+'<br>Total: <b>'+$m(s.total)+'</b><br><small>'+fdt(s.ts)+' · '+esc(s.pay)+(s.client?' · '+esc(s.client):'')+(s.notes?'<br>'+esc(s.notes):'')+'</small></div>';
+/* Punto azul de "estás aquí" (se actualiza con el GPS) */
+function setMe(){if(!map||!lastPos)return;const ll=[lastPos.lat,lastPos.lng];
+ if(!meMk){meCi=L.circle(ll,{radius:lastPos.acc||20,color:'#2563eb',weight:1,fillOpacity:.12}).addTo(map);meMk=L.circleMarker(ll,{radius:9,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(map).bindPopup('Estás aquí')}
+ else{meMk.setLatLng(ll);meCi.setLatLng(ll);meCi.setRadius(lastPos.acc||20)}}
 function drawMap(el,routes,sales){if(!el)return;if(!window.L){el.innerHTML='<p class="mut pad">No se pudo cargar el mapa (¿sin conexión?).</p>';return}
+ routeLine=null;meMk=null;meCi=null;
  map=L.map(el).setView([S.cfg.lat,S.cfg.lng],13);
  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
- const bd=[];routes.forEach((r,i)=>{const pts=r.pts.map(p=>[p.lat,p.lng]);if(pts.length){L.polyline(pts,{color:COL[i%COL.length],weight:4}).addTo(map).bindPopup(esc(r.name));bd.push(...pts)}});
- sales.filter(s=>s.lat!=null).forEach(s=>{L.circleMarker([s.lat,s.lng],{radius:7,color:'#fff',weight:2,fillColor:'#f59e0b',fillOpacity:1}).addTo(map).bindPopup(esc(s.name)+' ×'+s.qty+'<br>'+$m(s.total)+'<br>'+fdt(s.ts));bd.push([s.lat,s.lng])});
- if(bd.length)map.fitBounds(bd,{padding:[20,20],maxZoom:17});setTimeout(()=>map&&map.invalidateSize(),60)}
+ const bd=[];routes.forEach((r,i)=>{const pts=r.pts.map(p=>[p.lat,p.lng]),pl=L.polyline(pts,{color:COL[i%COL.length],weight:4}).addTo(map).bindPopup(esc(r.name));if(r.id===S.active)routeLine=pl;bd.push(...pts)});
+ /* ventas cercanas (~10 m) se agrupan en un solo icono con el conteo */
+ const gr={};sales.filter(s=>s.lat!=null).forEach(s=>{const k=s.lat.toFixed(4)+','+s.lng.toFixed(4);(gr[k]=gr[k]||[]).push(s)});
+ Object.values(gr).forEach(g=>{const n=g.length,ic=L.divIcon({className:'',html:'<div class="pin">'+(n>1?n:'$')+'</div>',iconSize:[32,32],iconAnchor:[16,16]});
+  L.marker([g[0].lat,g[0].lng],{icon:ic}).addTo(map).bindPopup('<div style="max-height:220px;overflow:auto"><b>'+n+(n>1?' ventas':' venta')+' · '+$m(sum(g,s=>s.total))+'</b><hr style="margin:4px 0">'+g.sort((a,b)=>a.ts-b.ts).map(saleDetail).join('')+'</div>');bd.push([g[0].lat,g[0].lng])});
+ if(bd.length)map.fitBounds(bd,{padding:[20,20],maxZoom:17});
+ if(lastPos){setMe();if(!bd.length)map.setView([lastPos.lat,lastPos.lng],16)}
+ setTimeout(()=>map&&map.invalidateSize(),60)}
 
 /* ================= VENTAS ================= */
 const salesF=()=>S.sales.filter(s=>(!F.from||s.ts>=+new Date(F.from+'T00:00'))&&(!F.to||s.ts<+new Date(F.to+'T00:00')+864e5)&&(!F.pid||s.pid===F.pid));
@@ -255,9 +270,9 @@ function csv(){const L=salesF().sort((a,b)=>a.ts-b.ts);if(!L.length)return toast
 const rDist=r=>{let t=0;for(let i=1;i<r.pts.length;i++)t+=hav(r.pts[i-1],r.pts[i]);return t};
 const rDur=r=>r.acc+(r.status==='tracking'?Date.now()-r.seg:0);
 const rSales=r=>S.sales.filter(s=>s.rid===r.id).length;
-function track(){if(!navigator.geolocation)return toast('Este navegador no tiene GPS',1);
- wid=navigator.geolocation.watchPosition(p=>{const r=ar();if(!r||r.status!=='tracking')return;const q={id:uid(),lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()},l=r.pts[r.pts.length-1];
-  if(l&&hav(l,q)<8&&q.t-l.t<30000)return;r.pts.push(q);r.u=Date.now();save();if(view==='route')live()},
+function track(){lastPos=null;if(!navigator.geolocation)return toast('Este navegador no tiene GPS',1);
+ wid=navigator.geolocation.watchPosition(p=>{const nf=!lastPos;lastPos={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};setMe();if(nf&&map)map.setView([lastPos.lat,lastPos.lng],17);const r=ar();if(!r||r.status!=='tracking')return;const q={id:uid(),lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()},l=r.pts[r.pts.length-1];
+  if(l&&hav(l,q)<8&&q.t-l.t<30000)return;r.pts.push(q);if(routeLine)routeLine.addLatLng([q.lat,q.lng]);r.u=Date.now();save();if(view==='route')live()},
   e=>toast('GPS: '+e.message,1),{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
  if(navigator.wakeLock)navigator.wakeLock.request('screen').then(l=>wl=l).catch(()=>{})}
 function untrack(){if(wid!=null)navigator.geolocation.clearWatch(wid);wid=null;if(wl){wl.release().catch(()=>{});wl=null}}
