@@ -121,11 +121,44 @@ function stat(L){const inc=sum(L,s=>s.total),cost=sum(L,s=>s.cost*s.qty),by={};
 const zk=s=>s.lat==null?null:(Math.round(s.lat/.005)*.005).toFixed(3)+', '+(Math.round(s.lng/.005)*.005).toFixed(3);
 function zones(L){const m={};L.forEach(s=>{const k=zk(s);if(!k)return;m[k]=m[k]||{n:0,inc:0};m[k].n++;m[k].inc+=s.total});return Object.entries(m).sort((a,b)=>b[1].inc-a[1].inc)}
 const delta=(c,p)=>p?((c-p)/p*100>=0?'+':'')+((c-p)/p*100).toFixed(0)+'%':'—';
-const HOL=['01-01','02-14','05-01','05-10','09-16','11-02','12-12','12-24','12-25','12-31'];
+/* Calendario laboral MX. Descansos oficiales (Ley Federal del Trabajo, art. 74) calculados por regla; Semana Santa por cálculo de Pascua. */
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31);return new Date(y,mo-1,(h+l-7*m+114)%31+1)}
+const nth=(y,m,w,n)=>{const d=new Date(y,m,1);d.setDate(1+((w-d.getDay()+7)%7)+(n-1)*7);return d};
+function rest(d){const y=d.getFullYear(),k=x=>day(+x),L={};
+ L[y+'-01-01']=['Año Nuevo','oficial'];L[k(nth(y,1,1,1))]=['Día de la Constitución','oficial'];L[k(nth(y,2,1,3))]=['Natalicio de Benito Juárez','oficial'];
+ L[y+'-05-01']=['Día del Trabajo','oficial'];L[y+'-09-16']=['Independencia','oficial'];L[k(nth(y,10,1,3))]=['Revolución Mexicana','oficial'];L[y+'-12-25']=['Navidad','oficial'];
+ if((y-2024)%6===0)L[y+'-10-01']=['Cambio de Poder Ejecutivo','oficial'];
+ const e=easter(y);[[-3,'Jueves Santo'],[-2,'Viernes Santo']].forEach(([o,n])=>{const x=new Date(e);x.setDate(e.getDate()+o);L[k(x)]=[n,'tradicional']});
+ return L[day(+d)]||null}
+const SP={'02-14':'San Valentín','05-10':'Día de las Madres','11-02':'Día de Muertos','12-12':'Día de la Virgen de Guadalupe','12-24':'Nochebuena','12-31':'Fin de año'};
+const spName=d=>SP[String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')]||'';
 function flags(d){const f=[],dm=d.getDate(),last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(),w=d.getDay();
  if([14,15,16,last-1,last,1].includes(dm))f.push('quincena');if(w===0||w===6)f.push('fin de semana');
  if(dm<=3)f.push('inicio de mes');if(dm>=last-2)f.push('fin de mes');
- if(HOL.includes(String(d.getMonth()+1).padStart(2,'0')+'-'+String(dm).padStart(2,'0')))f.push('día festivo');return f}
+ if(rest(d))f.push('día de descanso');
+ if(w===6||w===0){const nx=new Date(d.getFullYear(),d.getMonth(),dm+(w===6?2:1)),r=rest(nx);if(r&&r[1]==='oficial')f.push('fin de semana largo')}
+ if(spName(d))f.push('fecha especial');return f}
+function histDays(){const bd={};S.sales.forEach(s=>{const k=day(s.ts);bd[k]=(bd[k]||0)+s.total});return Object.entries(bd).map(([k,v])=>({d:new Date(k+'T12:00:00'),v}))}
+/* Pronóstico de un día: usa TUS datos si hay ≥3 días con esa condición; si no, es una estimación y se marca como tal */
+function outlook(d,H){const f=flags(d),why=[],ratios=[];let sc=0,tip='';
+ const base=H.length>=7?sum(H,x=>x.v)/H.length:null;
+ f.forEach(k=>{const a=H.filter(x=>flags(x.d).includes(k));if(base&&a.length>=3){const r=sum(a,x=>x.v)/a.length/base;ratios.push(r);why.push('en tus '+a.length+' días de '+k+' vendiste '+Math.round(r*100)+'% de tu promedio')}});
+ const src=ratios.length?'Dato':'Estimación';
+ if(ratios.length)sc=(ratios.reduce((a,b)=>a+b,0)/ratios.length-1)*5;
+ else{if(f.includes('día de descanso')){sc-=1;why.push('muchos trabajadores descansan, suele bajar la venta en zonas de oficinas o industria')}
+  if(f.includes('quincena')){sc+=1;why.push('día de pago, suele haber más gasto')}
+  if(f.includes('fin de semana largo'))why.push('fin de semana largo: más gente fuera de casa en zonas de paseo, menos en zonas de trabajo');
+  else if(f.includes('fin de semana'))why.push('el efecto depende de tu zona; compáralo con tus datos');
+  if(f.includes('fecha especial'))why.push(spName(d)+': puede cambiar la demanda')}
+ const wx=S.wx&&S.wx.dp?S.wx.dp[day(+d)]:null;if(wx!=null&&wx>=60){sc-=.5;why.push('lluvia probable ('+wx+'% pico del día)')}
+ const v=sc>=.8?'bueno':sc<=-.8?'flojo':'normal';
+ tip=v==='bueno'?'Lleva más inventario y sal temprano.':v==='flojo'?'Lleva menos producto o prueba otra zona.':'Vende como de costumbre.';
+ return{v,src,why:why.length?why.join('; ')+'.':'sin factores especiales.',tip}}
+function olHtml(){const H=histDays(),n=new Date();let o='';
+ for(let i=0;i<7;i++){const d=new Date(n.getFullYear(),n.getMonth(),n.getDate()+i,12),x=outlook(d,H),r=rest(d),f=flags(d),sp=spName(d);
+  o+='<div class="li"><div><b>'+(i===0?'Hoy':DAYS[d.getDay()])+' '+d.getDate()+'/'+(d.getMonth()+1)+'</b>'+(r?' · '+r[0]:'')+(sp?' · '+sp:'')+'<br><span class="mut sm">'+(f.length?f.join(', ')+'. ':'')+x.why+(i===0?' <b>'+x.tip+'</b>':'')+'</span></div><div style="text-align:right;min-width:92px"><b class="'+(x.v==='bueno'?'ok':x.v==='flojo'?'bad':'')+'">'+(x.v==='bueno'?'Buen día':x.v==='flojo'?'Día flojo':'Normal')+'</b><br><span class="tag '+(x.src==='Dato'?'dato':'est')+'">'+x.src+'</span></div></div>'}
+ return'<h3>Calendario de ventas</h3><p class="mut sm">Combina quincena, fines de semana, descansos oficiales (LFT art. 74), Semana Santa y lluvia. <b>Dato</b> = calculado con tus ventas (solo días con ventas registradas); <b>Estimación</b> = regla general hasta tener ≥3 días comparables. Verifica los festivos en el calendario oficial.</p>'+o}
+
 const wxRain=()=>S.wx&&Date.now()-S.wx.t<3*36e5?S.wx.prec>0:null;
 
 /* ================= RECOMENDACIONES (reglas y estadística simple, NO IA) ================= */
@@ -151,7 +184,7 @@ function recs(){const A=S.sales,o=[],T=(t,x)=>o.push({t,x});
  const rd={},dd={};A.forEach(s=>{if(s.rain==null)return;const k=day(s.ts);(s.rain?rd:dd)[k]=((s.rain?rd:dd)[k]||0)+s.total});
  const ra=Object.values(rd),da=Object.values(dd);
  if(ra.length>=3&&da.length>=3)T('Dato','Días con lluvia registrada: '+$m(sum(ra,x=>x)/ra.length)+' por día vs '+$m(sum(da,x=>x)/da.length)+' sin lluvia.');
- if(S.wx&&S.wx.prob>=50)T('Estimación','Pronóstico de hoy: '+S.wx.prob+'% de probabilidad de lluvia. Ajusta tu salida o inventario.');
+ if(S.wx&&S.wx.hrs&&Math.max(S.wx.next6,S.wx.prob)>=50)T('Estimación','Lluvia probable en las próximas horas (hasta '+Math.max(S.wx.next6,S.wx.prob)+'%). Ajusta tu salida o inventario.');
  const ev=S.events.filter(e=>e.date>=day(Date.now())&&e.date<=day(Date.now()+7*864e5));
  if(ev.length)T('Estimación','Eventos próximos que registraste: '+ev.map(e=>esc(e.name)+' ('+e.date+')').join(', ')+'. No hay datos propios para medir su efecto.');
  return o}
@@ -164,7 +197,9 @@ function go(v){view=v;charts.forEach(c=>c.destroy());charts=[];if(map){map.remov
  ({home:aHome,route:aRoute})[v]&&({home:aHome,route:aRoute})[v]();scrollTo(0,0)}
 
 /* ================= INICIO / DASHBOARD ================= */
-function wxHtml(){const w=S.wx;return w?'Clima en '+esc(S.cfg.place)+': <b>'+w.temp+' °C</b> ahora · máx. hoy '+w.max+' °C · lluvia '+w.prob+'% <span class="mut sm">(Open-Meteo, '+fdt(w.t)+')</span>':'<span class="mut">Clima no disponible (sin conexión o aún cargando).</span>'}
+function wxHtml(){const w=S.wx;if(!w||!w.hrs)return'<div class="li" style="border:0;padding:0"><span class="mut">Clima sin datos todavía…</span><button class="btn s" id="wxb" data-a="wxref">Actualizar</button></div>';
+ const m=Math.max(0,Math.round((Date.now()-w.t)/60000));
+ return'<div class="li" style="border:0;padding:0"><div>'+esc(S.cfg.place)+': <b>'+w.temp+' °C</b> · máx. hoy '+w.max+' °C<br>Lluvia: <b>ahora '+w.prob+'%</b> · próximas 6 h hasta '+w.next6+'% · pico del día '+w.peak+'%'+(w.peakH?' ('+w.peakH+')':'')+'<br><span class="mut sm">Actualizado hace '+(m<1?'menos de 1':m)+' min · Open-Meteo. Otras apps pueden mostrar otro % según la hora y el modelo.</span></div><button class="btn s" id="wxb" data-a="wxref">Actualizar</button></div>'}
 function vHome(){const[a,b]=rng(),L=inR(a,b),P=inR(a-(b-a),a),s=stat(L),p=stat(P);
  const best=(()=>{const m={};L.forEach(x=>{const k=day(x.ts);m[k]=(m[k]||0)+x.total-x.cost*x.qty});return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]})();
  const hr={};L.forEach(x=>{const h=new Date(x.ts).getHours();hr[h]=(hr[h]||0)+x.total});const bh=Object.entries(hr).sort((a,b)=>b[1]-a[1])[0];
@@ -176,6 +211,7 @@ function vHome(){const[a,b]=rng(),L=inR(a,b),P=inR(a-(b-a),a),s=stat(L),p=stat(P
  <div class="chips">${[['today','Hoy'],['week','Semana'],['month','Mes'],['custom','Personalizado']].map(([k,t])=>'<button class="chip '+(R.k===k?'on':'')+'" data-a="rng" data-id="'+k+'">'+t+'</button>').join('')}</div>
  ${R.k==='custom'?'<div class="row"><label>Desde<input type="date" id="r1" value="'+R.from+'"></label><label>Hasta<input type="date" id="r2" value="'+R.to+'"></label></div>':''}
  <div class="card" id="wx">${wxHtml()}</div>
+ <div class="card" id="ol">${olHtml()}</div>
  <div class="grid">
   <div class="stat"><small>Ventas</small><b>${s.n}</b><small>${delta(s.n,p.n)} vs periodo previo</small></div>
   <div class="stat"><small>Ingresos</small><b>${$m(s.inc)}</b><small>${delta(s.inc,p.inc)}</small></div>
@@ -206,9 +242,17 @@ function aHome(){const[a,b]=rng(),L=inR(a,b);
  const d={};L.forEach(s=>{const k=day(s.ts);d[k]=d[k]||[0,0];d[k][0]+=s.total;d[k][1]+=s.total-s.cost*s.qty});const ks=Object.keys(d).sort();
  mk('c3',{type:'line',data:{labels:ks.map(k=>k.slice(5)),datasets:[{label:'Ingresos',data:ks.map(k=>d[k][0]),borderColor:pri},{label:'Ganancia',data:ks.map(k=>d[k][1]),borderColor:acc}]}});
  drawMap($('#map'),S.routes.filter(r=>r.end?r.end>=a&&r.start<b:true),L);
- if(!S.wx||Date.now()-S.wx.t>36e5)fetchWx()}
-async function fetchWx(){try{const c=S.cfg,r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lng+'&current=temperature_2m,precipitation&daily=precipitation_probability_max,temperature_2m_max&timezone=auto&forecast_days=2');if(!r.ok)throw 0;const j=await r.json();
- S.wx={t:Date.now(),temp:j.current.temperature_2m,prec:j.current.precipitation,prob:j.daily.precipitation_probability_max[0],max:j.daily.temperature_2m_max[0]};save();const e=$('#wx');if(e)e.innerHTML=wxHtml()}catch(e){}}
+ if(!S.wx||!S.wx.hrs||Date.now()-S.wx.t>9e5)fetchWx()}
+let wxBusy=false;
+function paintWx(){const w=$('#wx');if(w)w.innerHTML=wxHtml();const o=$('#ol');if(o)o.innerHTML=olHtml()}
+async function fetchWx(manual){if(wxBusy)return;wxBusy=true;const b=$('#wxb');if(b){b.disabled=true;b.textContent='Actualizando…'}
+ try{const c=S.cfg,r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lng+'&current=temperature_2m,precipitation&hourly=precipitation_probability&daily=precipitation_probability_max,temperature_2m_max&timezone=auto&forecast_days=7',{cache:'no-store'});
+  if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json(),hh=j.hourly.time,hp=j.hourly.precipitation_probability,ct=j.current.time.slice(0,13);
+  let i=hh.findIndex(t=>t.slice(0,13)===ct);if(i<0)i=0;const hrs=hp.slice(i,i+6).map(x=>x||0),today=hh.map((t,k)=>[t,hp[k]||0]).filter(([t])=>t.slice(0,10)===j.current.time.slice(0,10)),pk=today.reduce((a,b)=>b[1]>a[1]?b:a,['',0]);
+  S.wx={t:Date.now(),temp:j.current.temperature_2m,prec:j.current.precipitation,prob:hp[i]||0,next6:Math.max(0,...hrs),hrs,peak:pk[1],peakH:pk[0].slice(11,16),max:j.daily.temperature_2m_max[0],dp:Object.fromEntries(j.daily.time.map((d,k)=>[d,j.daily.precipitation_probability_max[k]]))};
+  save();if(manual)toast('Clima actualizado')}
+ catch(e){if(manual)toast('No se pudo actualizar el clima (¿sin conexión?)',1)}
+ wxBusy=false;paintWx()}
 const COL=['#0f766e','#7c3aed','#dc2626','#2563eb','#ea580c','#059669'];
 let routeLine=null,meMk=null,meCi=null,lastPos=null;
 /* Detalle de una venta para el globo del mapa */
@@ -380,7 +424,7 @@ const A={
  go:(i,b)=>{selR=null;go(b.dataset.v)},close:closeSheet,newsale:()=>saleForm(),
  rng:i=>{R.k=i;go('home')},editsale:i=>saleForm(i),
  delsale:i=>{if(!confirm('¿Borrar esta venta? Se devolverá el stock.'))return;const s=S.sales.find(x=>x.id===i),p=S.products.find(x=>s&&x.id===s.pid);if(p){p.stock+=s.qty;p.u=Date.now()}S.sales=S.sales.filter(x=>x.id!==i);S.del.push({t:'sales',id:i});save();go('sales')},
- csv,rstart:()=>rAct('start'),rpause:()=>rAct('pause'),rresume:()=>rAct('resume'),rend:()=>{if(confirm('¿Finalizar el recorrido?'))rAct('end')},
+ wxref:()=>fetchWx(true),csv,rstart:()=>rAct('start'),rpause:()=>rAct('pause'),rresume:()=>rAct('resume'),rend:()=>{if(confirm('¿Finalizar el recorrido?'))rAct('end')},
  rview:i=>{selR=i;go('route')},rdel:i=>{if(!confirm('¿Borrar este recorrido?'))return;S.routes=S.routes.filter(x=>x.id!==i);S.del.push({t:'routes',id:i});save();selR=null;go('route')},
  newprod:()=>prodForm(),editprod:i=>prodForm(i),
  delprod:i=>{if(!confirm('¿Borrar producto? Las ventas pasadas se conservan.'))return;S.products=S.products.filter(x=>x.id!==i);S.del.push({t:'products',id:i});save();go('more')},
@@ -413,6 +457,9 @@ document.addEventListener('change',e=>{const t=e.target;
  if(t.id==='rest'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const o=JSON.parse(fr.result);if(!Array.isArray(o.sales)||!Array.isArray(o.products))throw new Error('Archivo no válido');
   if(!confirm('Esto reemplaza tus datos actuales por el respaldo. ¿Continuar?'))return;const c=S.cfg;S=Object.assign(blank(),o,{cfg:Object.assign(c,{place:o.cfg&&o.cfg.place||c.place}),active:null});S.routes.forEach(r=>{if(r.status!=='done'){r.status='done';r.end=r.end||Date.now()}});save();toast('Respaldo restaurado');go('more')}catch(x){toast('No se pudo restaurar: '+x.message,1)}};fr.readAsText(t.files[0])}});
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',theme);
+const stale=()=>!S.wx||!S.wx.hrs||Date.now()-S.wx.t>9e5;
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(stale())fetchWx();else paintWx()}});
+setInterval(()=>{if(document.hidden)return;if(stale())fetchWx();else paintWx()},60000);
 go('home');
 </script>
 </body>
