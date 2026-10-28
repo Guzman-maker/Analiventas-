@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RutaVentas">
 <title>RutaVentas</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
 <style>
 /* ===== Tokens de color (claro/oscuro) — cambia aquí la paleta ===== */
 :root{--bg:#f1f5f4;--card:#fff;--ink:#0d2326;--mut:#5b7074;--pri:#0f766e;--acc:#f59e0b;--bd:#d9e2e1;--bad:#c0392b;--ok:#15803d;color-scheme:light}
@@ -38,8 +38,17 @@ input[type=checkbox]{width:auto;margin-right:8px}
 .li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)}.li:last-child{border:0}
 .banner{background:#fef3c7;color:#92400e;border-radius:10px;padding:10px;margin-bottom:12px;font-size:.9rem}
 #map,.map{height:320px;border-radius:14px;border:1px solid var(--bd);margin-bottom:14px;position:relative;z-index:0;isolation:isolate;overflow:hidden}
-.leaflet-container{font:inherit}
-.pin{width:32px;height:32px;border-radius:50%;background:var(--acc);color:#1b1200;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:800}
+.maplibregl-map{font:inherit}.maplibregl-canvas{max-height:none}
+.maplibregl-popup-content{color:#0d2326;font:inherit;border-radius:10px}
+.me-dot{width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.zpin{min-width:28px;height:28px;padding:0 6px;border-radius:8px;background:var(--pri);color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}
+.zr{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd);cursor:pointer}.zr:last-child{border:0}
+.zn{flex:none;width:28px;height:28px;border-radius:8px;background:var(--pri);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
+.zb{flex:1;min-width:0}.zt{display:flex;justify-content:space-between;gap:8px}.zt b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zbar{height:6px;border-radius:4px;background:var(--bd);margin:5px 0;overflow:hidden}.zbar i{display:block;height:100%;background:var(--pri);border-radius:4px}
+.pin{width:28px;height:28px;border-radius:50%;background:var(--acc);color:#1b1200;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;cursor:pointer}
+.pin .lbl{display:none;position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:5px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(255,255,255,.95);color:#0d2326;font-weight:600;font-size:.72rem;padding:1px 6px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);pointer-events:none}
+.zl .pin .lbl{display:block}
 canvas{max-height:220px}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:2000}
 nav button{background:none;border:0;color:var(--mut);font:inherit;font-size:.75rem;padding:6px 0;cursor:pointer}
@@ -64,7 +73,7 @@ textarea.sql{height:140px;font:12px/1.3 ui-monospace,monospace}
 </nav>
 <div id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 "use strict";
@@ -118,8 +127,25 @@ function stat(L){const inc=sum(L,s=>s.total),cost=sum(L,s=>s.cost*s.qty),by={};
  L.forEach(s=>by[s.name]=(by[s.name]||0)+s.qty);const top=Object.entries(by).sort((a,b)=>b[1]-a[1])[0];
  const ts=L.map(s=>s.ts).sort((a,b)=>a-b),g=[];for(let i=1;i<ts.length;i++){const d=ts[i]-ts[i-1];if(d<3*36e5)g.push(d)}
  return{n:L.length,inc,cost,pr:inc-cost,u:sum(L,s=>s.qty),top,gap:g.length?sum(g,x=>x)/g.length:null}}
-const zk=s=>s.lat==null?null:(Math.round(s.lat/.005)*.005).toFixed(3)+', '+(Math.round(s.lng/.005)*.005).toFixed(3);
-function zones(L){const m={};L.forEach(s=>{const k=zk(s);if(!k)return;m[k]=m[k]||{n:0,inc:0};m[k].n++;m[k].inc+=s.total});return Object.entries(m).sort((a,b)=>b[1].inc-a[1].inc)}
+/* Zonas: las ventas a ≤600 m del centro de una zona se agrupan en ella; se nombran con la calle/colonia (cache local) */
+function zonesX(L){const cs=[];
+ L.filter(s=>s.lat!=null&&s.lng!=null).slice().sort((a,b)=>a.ts-b.ts).forEach(s=>{
+  let b=null,bd=1e9;cs.forEach(c=>{const d=hav(c,s);if(d<bd){bd=d;b=c}});
+  if(b&&bd<=600){b.n++;b.inc+=s.total;b.sl+=s.lat;b.sg+=s.lng;b.lat=b.sl/b.n;b.lng=b.sg/b.n;b.pts.push(s)}
+  else cs.push({lat:s.lat,lng:s.lng,sl:s.lat,sg:s.lng,n:1,inc:s.total,pts:[s]})});
+ const t=sum(cs,c=>c.inc)||1;cs.sort((a,b)=>b.inc-a.inc);
+ cs.forEach((c,i)=>{c.rank=i+1;c.share=c.inc/t;c.rad=Math.max(120,Math.min(800,Math.max(...c.pts.map(p=>hav(c,p)))+80))});return cs}
+const GK='rv_geo_v1';let GEO={};try{GEO=JSON.parse(localStorage.getItem(GK)||'{}')}catch(e){}
+const gkey=c=>c.lat.toFixed(3)+','+c.lng.toFixed(3),zname=c=>GEO[gkey(c)]||('Zona '+c.rank);
+let geoBusy=false;
+async function geoFill(zs){if(geoBusy)return;geoBusy=true;
+ try{for(const c of zs){const k=gkey(c);if(GEO[k])continue;
+  const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=es&lat='+c.lat+'&lon='+c.lng);if(!r.ok)break;
+  const j=await r.json(),a=j.address||{},road=a.road||a.pedestrian||a.residential||a.path,sub=a.neighbourhood||a.suburb||a.quarter||a.city_district||a.village;
+  const nm=[road,sub].filter(Boolean).slice(0,2).join(', ')||(j.name||'');
+  if(nm){GEO[k]=nm;try{localStorage.setItem(GK,JSON.stringify(GEO))}catch(e){}
+   document.querySelectorAll('[data-zr="'+c.rank+'"]').forEach(el=>el.textContent=nm)}
+  await new Promise(f=>setTimeout(f,1100))}}catch(e){}finally{geoBusy=false}}
 const delta=(c,p)=>p?((c-p)/p*100>=0?'+':'')+((c-p)/p*100).toFixed(0)+'%':'—';
 /* Calendario laboral MX. Descansos oficiales (Ley Federal del Trabajo, art. 74) calculados por regla; Semana Santa por cálculo de Pascua. */
 function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31);return new Date(y,mo-1,(h+l-7*m+114)%31+1)}
@@ -162,30 +188,53 @@ function olHtml(){const H=histDays(),n=new Date();let o='';
 const wxRain=()=>S.wx&&Date.now()-S.wx.t<3*36e5?S.wx.prec>0:null;
 
 /* ================= RECOMENDACIONES (reglas y estadística simple, NO IA) ================= */
-function recs(){const A=S.sales,o=[],T=(t,x)=>o.push({t,x});
+function recs(){const A=S.sales,o=[],T=(t,x)=>o.push({t,x}),now=Date.now(),dk=s=>day(s.ts),pl=(n,a,b)=>n+' '+(n===1?a:b);
  if(A.length<10)return[{t:'Estimación',x:'Registra al menos 10 ventas (tienes '+A.length+') para generar recomendaciones con tu historial.'}];
- const g=f=>{const m={};A.forEach(s=>{const k=f(s);if(k==null)return;m[k]=m[k]||{n:0,inc:0,pr:0};m[k].n++;m[k].inc+=s.total;m[k].pr+=s.total-s.cost*s.qty});return Object.entries(m)};
- const P=g(s=>s.name).sort((a,b)=>b[1].pr-a[1].pr).slice(0,3);
- T('Dato','Productos con más ganancia: '+P.map(([k,v])=>esc(k)+' ('+$m(v.pr)+')').join(', ')+'.');
- const H=g(s=>new Date(s.ts).getHours()).sort((a,b)=>b[1].inc-a[1].inc).slice(0,2);
- T('Dato','Horas con más ingresos: '+H.map(([k,v])=>k+':00 ('+v.n+' ventas)').join(' y ')+'. Considera salir antes de las '+Math.max(0,H[0][0]-1)+':00.');
- const D=g(s=>DAYS[new Date(s.ts).getDay()]).sort((a,b)=>b[1].inc-a[1].inc).slice(0,2);
- T('Dato','Días con más ingresos: '+D.map(([k,v])=>k+' ('+$m(v.inc)+')').join(' y ')+'.');
- const Z=zones(A).slice(0,2);if(Z.length)T('Dato','Zonas con más ingresos (cuadrícula ~500 m): '+Z.map(([k,v])=>k+' ('+$m(v.inc)+', '+v.n+' ventas)').join(' | ')+'.');
- const lim=Date.now()-14*864e5;
- S.products.forEach(p=>{const u=sum(A.filter(s=>s.pid===p.id&&s.ts>=lim),s=>s.qty),avg=u/14;
-  if(avg>0&&p.stock/avg<3)T('Dato','Aumentar '+esc(p.name)+': vendes ~'+avg.toFixed(1)+'/día y quedan '+p.stock+' (alcanza ~'+(p.stock/avg).toFixed(1)+' días).');
-  else if(u===0&&p.stock>0)T('Dato','Reducir '+esc(p.name)+': sin ventas en 14 días y hay '+p.stock+' en inventario.')});
- const bd={};A.forEach(s=>{const k=day(s.ts);bd[k]=(bd[k]||0)+s.total});
- const ds=Object.entries(bd).map(([k,v])=>({d:new Date(k+'T12:00:00'),v})),av=a=>sum(a,x=>x.v)/a.length;
+ /* 1) Inventario: ritmo = unidades por DÍA CON VENTAS en los últimos 14 días (no se reparte entre días en que no saliste a vender) */
+ const rc=A.filter(s=>s.ts>=now-14*864e5),ad=new Set(rc.map(dk)).size,few=ad<3?' (estimado con solo '+pl(ad,'día','días')+' de ventas)':'';
+ S.products.forEach(p=>{const u=sum(rc.filter(s=>s.pid===p.id),s=>s.qty);
+  if(u>0){const av=u/ad,left=p.stock/av;
+   if(p.stock<=0)T('Dato','Sin stock de '+esc(p.name)+': vendes ~'+av.toFixed(1)+' uds por día de venta. Repón antes de salir'+few+'.');
+   else if(left<3)T('Dato','Surte '+esc(p.name)+': quedan '+p.stock+' y vendes ~'+av.toFixed(1)+' uds por día de venta; alcanza para ~'+left.toFixed(1)+' días de venta'+few+'.')}
+  else if(p.stock>0)T('Dato','Sin ventas de '+esc(p.name)+' en 14 días y hay '+p.stock+' en inventario: compra menos o ponlo más a la vista.')});
+ /* 2) Clientes / locales (campo Cliente de cada venta) */
+ const cm={};A.forEach(s=>{const c=(s.client||'').trim();if(!c)return;const k=c.toLowerCase(),q=cm[k]=cm[k]||{n:c,d:new Set(),inc:0,first:s.ts,last:s.ts};q.d.add(dk(s));q.inc+=s.total;q.first=Math.min(q.first,s.ts);q.last=Math.max(q.last,s.ts)});
+ const cl=Object.values(cm).map(c=>({...c,vis:c.d.size,gap:c.d.size>1?(c.last-c.first)/864e5/(c.d.size-1):0,since:(now-c.last)/864e5}));
+ const back=cl.filter(c=>c.vis>=2&&c.since>=3&&c.since>c.gap*1.5).sort((a,b)=>b.inc-a.inc).slice(0,3);
+ if(back.length)T('Dato','Retoma estos clientes, llevan más sin comprar de lo habitual: '+back.map(c=>esc(c.n)+' (compra cada ~'+Math.max(1,Math.round(c.gap))+' d, llevas '+Math.round(c.since)+' d)').join('; ')+'.');
+ const topc=cl.slice().sort((a,b)=>b.inc-a.inc).slice(0,3);
+ if(topc.length)T('Dato','Mejores clientes/locales: '+topc.map(c=>esc(c.n)+' ('+$m(c.inc)+', '+pl(c.vis,'día','días')+')').join(', ')+'.');
+ /* 3) Mejor franja de 2 horas */
+ const hh=Array(24).fill(0);A.forEach(s=>hh[new Date(s.ts).getHours()]+=s.total);const tot=sum(hh,x=>x)||1;let bh=0;for(let h=0;h<23;h++)if(hh[h]+hh[h+1]>hh[bh]+hh[bh+1])bh=h;
+ T('Dato','Tu mejor franja es de '+bh+':00 a '+(bh+2)+':00: '+Math.round((hh[bh]+hh[bh+1])/tot*100)+'% de tus ingresos ('+$m(hh[bh]+hh[bh+1])+'). Procura estar en tu zona fuerte antes de las '+bh+':00.');
+ /* 4) Día de la semana: PROMEDIO por día con ventas (no total), mínimo 2 registros por día */
+ const bdy={};A.forEach(s=>{const k=dk(s);bdy[k]=(bdy[k]||0)+s.total});
+ const wd={};Object.entries(bdy).forEach(([k,v])=>{const w=new Date(k+'T12:00:00').getDay();(wd[w]=wd[w]||[]).push(v)});
+ const wr=Object.entries(wd).filter(([,a])=>a.length>=2).map(([w,a])=>[DAYS[w],sum(a,x=>x)/a.length,a.length]).sort((a,b)=>b[1]-a[1]);
+ if(wr.length>=2)T('Dato','Mejor día: '+wr[0][0]+' ('+$m(wr[0][1])+' promedio, '+wr[0][2]+' veces) · el más flojo: '+wr[wr.length-1][0]+' ('+$m(wr[wr.length-1][1])+').');
+ else T('Estimación','Faltan datos para comparar días de la semana (se necesitan ≥2 registros del mismo día).');
+ /* 5) Zonas */
+ const Z=zonesX(A);
+ if(Z.length){const z=Z[0];T('Dato','Zona más fuerte: '+esc(zname(z))+' — '+pl(z.n,'venta','ventas')+', '+$m(z.inc)+' ('+Math.round(z.share*100)+'% de lo vendido con ubicación), ticket promedio '+$m(z.inc/z.n)+'.'+(Z[1]?' Le sigue '+esc(zname(Z[1]))+' ('+$m(Z[1].inc)+').':''));
+  const w=Z.length>=3?Z[Z.length-1]:null;if(w&&w.n>=3&&w.share<.1)T('Dato','Zona de bajo rendimiento: '+esc(zname(w))+' ('+pl(w.n,'venta','ventas')+', '+Math.round(w.share*100)+'%). Evalúa quitarla de la ruta o cambiar el horario.')}
+ /* 6) Productos */
+ const pm={};A.forEach(s=>{const x=pm[s.name]=pm[s.name]||{u:0,inc:0,pr:0};x.u+=s.qty;x.inc+=s.total;x.pr+=s.total-s.cost*s.qty});
+ const P=Object.entries(pm).sort((a,b)=>b[1].pr-a[1].pr);
+ T('Dato','Más ganancia: '+P.slice(0,3).map(([k,v])=>esc(k)+' ('+$m(v.pr)+', '+v.u+' uds)').join(', ')+'.');
+ const lm=P.filter(([,v])=>v.u>=5&&v.inc>0&&v.pr/v.inc<.25).sort((a,b)=>a[1].pr/a[1].inc-b[1].pr/b[1].inc)[0];
+ if(lm)T('Dato',esc(lm[0])+' deja solo '+Math.round(lm[1].pr/lm[1].inc*100)+'% de margen: revisa su precio o su costo.');
+ /* 7) Tendencia: promedio por día de venta, esta semana vs la anterior */
+ const tw=A.filter(s=>s.ts>=now-7*864e5),tp=A.filter(s=>s.ts<now-7*864e5&&s.ts>=now-14*864e5),n1=new Set(tw.map(dk)).size,n2=new Set(tp.map(dk)).size;
+ if(n1>=2&&n2>=2){const a1=sum(tw,s=>s.total)/n1,b1=sum(tp,s=>s.total)/n2;T('Dato','Promedio por día de venta: '+$m(a1)+' los últimos 7 días vs '+$m(b1)+' los 7 anteriores ('+delta(a1,b1)+').')}
+ const ds=Object.entries(bdy).map(([k,v])=>({d:new Date(k+'T12:00:00'),v})),av=a=>sum(a,x=>x.v)/a.length;
  flags(new Date()).forEach(f=>{const a=ds.filter(x=>flags(x.d).includes(f)),b=ds.filter(x=>!flags(x.d).includes(f));
   if(a.length>=3&&b.length>=3)T('Dato','Días de '+f+': '+$m(av(a))+' promedio vs '+$m(av(b))+' otros días (solo cuenta días con ventas registradas).');
   else T('Estimación','Hoy es '+f+', pero aún no hay suficientes días registrados para comparar.')});
- const rd={},dd={};A.forEach(s=>{if(s.rain==null)return;const k=day(s.ts);(s.rain?rd:dd)[k]=((s.rain?rd:dd)[k]||0)+s.total});
- const ra=Object.values(rd),da=Object.values(dd);
- if(ra.length>=3&&da.length>=3)T('Dato','Días con lluvia registrada: '+$m(sum(ra,x=>x)/ra.length)+' por día vs '+$m(sum(da,x=>x)/da.length)+' sin lluvia.');
+ const rd={},dd={};A.forEach(s=>{if(s.rain==null)return;const k=dk(s);(s.rain?rd:dd)[k]=((s.rain?rd:dd)[k]||0)+s.total});
+ const ra=Object.values(rd),dr=Object.values(dd);
+ if(ra.length>=3&&dr.length>=3)T('Dato','Días con lluvia registrada: '+$m(sum(ra,x=>x)/ra.length)+' por día vs '+$m(sum(dr,x=>x)/dr.length)+' sin lluvia.');
  if(S.wx&&S.wx.hrs&&Math.max(S.wx.next6,S.wx.prob)>=50)T('Estimación','Lluvia probable en las próximas horas (hasta '+Math.max(S.wx.next6,S.wx.prob)+'%). Ajusta tu salida o inventario.');
- const ev=S.events.filter(e=>e.date>=day(Date.now())&&e.date<=day(Date.now()+7*864e5));
+ const ev=S.events.filter(e=>e.date>=day(now)&&e.date<=day(now+7*864e5));
  if(ev.length)T('Estimación','Eventos próximos que registraste: '+ev.map(e=>esc(e.name)+' ('+e.date+')').join(', ')+'. No hay datos propios para medir su efecto.');
  return o}
 
@@ -203,7 +252,7 @@ function wxHtml(){const w=S.wx;if(!w||!w.hrs)return'<div class="li" style="borde
 function vHome(){const[a,b]=rng(),L=inR(a,b),P=inR(a-(b-a),a),s=stat(L),p=stat(P);
  const best=(()=>{const m={};L.forEach(x=>{const k=day(x.ts);m[k]=(m[k]||0)+x.total-x.cost*x.qty});return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]})();
  const hr={};L.forEach(x=>{const h=new Date(x.ts).getHours();hr[h]=(hr[h]||0)+x.total});const bh=Object.entries(hr).sort((a,b)=>b[1]-a[1])[0];
- const low=S.products.filter(x=>x.stock<=x.min),Z=zones(L).slice(0,5),now=Date.now(),n=new Date();
+ const low=S.products.filter(x=>x.stock<=x.min),Z=zonesX(L).slice(0,5),now=Date.now(),n=new Date();
  const fx=(a,b)=>stat(inR(a,b)).inc,d0=+new Date(n.getFullYear(),n.getMonth(),n.getDate()),wk=d0-((n.getDay()+6)%7)*864e5;
  const demo=S.sales.some(x=>x.demo)||S.products.some(x=>x.demo);
  return`<h2>Resumen</h2>${demo?'<div class="banner">Hay datos de <b>DEMOSTRACIÓN</b> mezclados. Elimínalos en Más → Datos.</div>':''}
@@ -226,8 +275,8 @@ function vHome(){const[a,b]=rng(),L=inR(a,b),P=inR(a-(b-a),a),s=stat(L),p=stat(P
  <div class="sm" style="margin-top:8px">Mes: <b>${$m(fx(+new Date(n.getFullYear(),n.getMonth(),1),+new Date(n.getFullYear(),n.getMonth()+1,1)))}</b> <span class="mut">· mes anterior ${$m(fx(+new Date(n.getFullYear(),n.getMonth()-1,1),+new Date(n.getFullYear(),n.getMonth(),1)))}</span></div></div>
  <div class="card"><h3>Ingresos por hora</h3><canvas id="c1"></canvas></div>
  <div class="card"><h3>Por día de la semana</h3><canvas id="c2"></canvas></div>
- <div class="card"><h3>Evolución por día</h3><canvas id="c3"></canvas></div>
- <div class="card"><h3>Zonas con más ventas</h3>${Z.length?Z.map(([k,v])=>'<div class="li"><span>~'+k+'</span><span>'+v.n+' ventas · <b>'+$m(v.inc)+'</b></span></div>').join(''):'<p class="mut">Sin ventas con ubicación en este periodo.</p>'}</div>
+ <div class="card"><h3>Evolución por día</h3><p class="mut sm" id="c3t"></p><canvas id="c3"></canvas></div>
+ <div class="card"><h3>Zonas con más ventas</h3>${Z.length?'<p class="mut sm">Las ventas cercanas (≤ 600 m) se juntan en una zona. Toca una para verla en el mapa.</p>'+Z.map(z=>'<div class="zr" data-a="zfly" data-id="'+z.rank+'"><div class="zn">'+z.rank+'</div><div class="zb"><div class="zt"><b data-zr="'+z.rank+'">'+esc(zname(z))+'</b><span>'+$m(z.inc)+'</span></div><div class="zbar"><i style="width:'+Math.max(4,Math.round(z.share*100))+'%"></i></div><div class="mut sm">'+z.n+(z.n>1?' ventas':' venta')+' · '+Math.round(z.share*100)+'% de tus ingresos con ubicación</div></div></div>').join(''):'<p class="mut">Sin ventas con ubicación en este periodo.</p>'}</div>
  <h3>Mapa de rutas y ventas</h3><div id="map"></div>
  <div class="card"><h3>Recomendaciones</h3><p class="mut sm">Reglas y cálculos sobre tu historial. <span class="tag dato">Dato</span> sale de tus ventas; <span class="tag est">Estimación</span> es una suposición.</p>
  ${recs().map(r=>'<div class="li"><span><span class="tag '+(r.t==='Dato'?'dato':'est')+'">'+r.t+'</span>'+r.x+'</span></div>').join('')}</div>`}
@@ -239,9 +288,18 @@ function aHome(){const[a,b]=rng(),L=inR(a,b);
  mk('c1',{type:'bar',data:{labels:h.map((_,i)=>i),datasets:[{label:'Ingresos',data:h,backgroundColor:pri}]},options:{plugins:{legend:{display:false}}}});
  const w=Array(7).fill(0);L.forEach(s=>w[(new Date(s.ts).getDay()+6)%7]+=s.total);
  mk('c2',{type:'bar',data:{labels:['L','M','X','J','V','S','D'],datasets:[{label:'Ingresos',data:w,backgroundColor:acc}]},options:{plugins:{legend:{display:false}}}});
- const d={};L.forEach(s=>{const k=day(s.ts);d[k]=d[k]||[0,0];d[k][0]+=s.total;d[k][1]+=s.total-s.cost*s.qty});const ks=Object.keys(d).sort();
- mk('c3',{type:'line',data:{labels:ks.map(k=>k.slice(5)),datasets:[{label:'Ingresos',data:ks.map(k=>d[k][0]),borderColor:pri},{label:'Ganancia',data:ks.map(k=>d[k][1]),borderColor:acc}]}});
- drawMap($('#map'),S.routes.filter(r=>r.end?r.end>=a&&r.start<b:true),L);
+/* Evolución diaria: serie continua (días sin ventas = $0), mínimo 14 y máximo 60 días hasta el fin del periodo */
+ const e0=new Date(Math.min(b-1,Date.now())),e1=new Date(e0.getFullYear(),e0.getMonth(),e0.getDate()),nd=Math.max(14,Math.min(60,Math.round((e1-a)/864e5)+1)),db={},ks=[];
+ S.sales.forEach(x=>{const k=day(x.ts);db[k]=db[k]||[0,0];db[k][0]+=x.total;db[k][1]+=x.total-x.cost*x.qty});
+ for(let i=nd-1;i>=0;i--)ks.push(day(+new Date(e1.getFullYear(),e1.getMonth(),e1.getDate()-i,12)));
+ const inc=ks.map(k=>(db[k]||[0,0])[0]),gan=ks.map(k=>(db[k]||[0,0])[1]),ma=inc.map((_,i)=>{const w=inc.slice(Math.max(0,i-6),i+1);return sum(w,x=>x)/w.length}),al=(c,x)=>/^#[0-9a-f]{6}$/i.test(c)?c+x:c;
+ const t3=$('#c3t');if(t3)t3.textContent='Últimos '+nd+' días hasta '+ks[ks.length-1].slice(8)+'/'+ks[ks.length-1].slice(5,7)+'. Barras: ingresos · línea: ganancia · punteada: promedio de 7 días.';
+ mk('c3',{type:'bar',data:{labels:ks.map(k=>k.slice(8)+'/'+k.slice(5,7)),datasets:[
+  {type:'bar',label:'Ingresos',data:inc,backgroundColor:al(pri,'99'),borderRadius:4,order:3},
+  {type:'line',label:'Ganancia',data:gan,borderColor:acc,backgroundColor:acc,borderWidth:3,tension:.3,pointRadius:3,pointHoverRadius:5,order:1},
+  {type:'line',label:'Promedio 7 días',data:ma,borderColor:mut,borderDash:[6,4],borderWidth:2,pointRadius:0,tension:.3,order:2}]},
+  options:{interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+$m(c.parsed.y)}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v}},x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true}}}}});
+ drawMap($('#map'),S.routes.filter(r=>r.end?r.end>=a&&r.start<b:true),L);geoFill(zonesX(L).slice(0,5));
  if(!S.wx||!S.wx.hrs||Date.now()-S.wx.t>9e5)fetchWx()}
 let wxBusy=false;
 function paintWx(){const w=$('#wx');if(w)w.innerHTML=wxHtml();const o=$('#ol');if(o)o.innerHTML=olHtml()}
@@ -256,23 +314,54 @@ async function fetchWx(manual){if(wxBusy)return;wxBusy=true;const b=$('#wxb');if
 const COL=['#0f766e','#7c3aed','#dc2626','#2563eb','#ea580c','#059669'];
 let routeLine=null,meMk=null,meCi=null,lastPos=null;
 /* Detalle de una venta para el globo del mapa */
-const saleDetail=s=>'<div style="margin-bottom:6px"><b>'+esc(s.name)+'</b><br>Cantidad: '+s.qty+' × '+$m(s.price)+'<br>Total: <b>'+$m(s.total)+'</b><br><small>'+fdt(s.ts)+' · '+esc(s.pay)+(s.client?' · '+esc(s.client):'')+(s.notes?'<br>'+esc(s.notes):'')+'</small></div>';
+const saleDetail=(s,n)=>'<div>'+(n?'<span class="mut">Venta #'+n+'</span><br>':'')+'<b>'+esc(s.client||s.name)+'</b><br>'+esc(s.name)+' × '+s.qty+' · '+$m(s.price)+' c/u<br>Total: <b>'+$m(s.total)+'</b><br><small>'+fdt(s.ts)+' · '+esc(s.pay)+(s.notes?'<br>'+esc(s.notes):'')+'</small></div>';
+/* ===== Mapa: MapLibre GL JS + mosaicos vectoriales OpenFreeMap (sin llave, sin límite de uso) ===== */
+const MAP_STYLE='https://tiles.openfreemap.org/styles/liberty';
+let zonesShown=[],mapReady=false;
+const circ=(lat,lng,r,n=48)=>{const o=[];for(let i=0;i<=n;i++){const a=i/n*2*Math.PI;o.push([lng+Math.cos(a)*r/(111320*Math.cos(lat*Math.PI/180)),lat+Math.sin(a)*r/111320])}return o};
+const lineF=c=>({type:'Feature',geometry:{type:'LineString',coordinates:c.length===1?[c[0],c[0]]:c},properties:{}});
 /* Punto azul de "estás aquí" (se actualiza con el GPS) */
-function setMe(){if(!map||!lastPos)return;const ll=[lastPos.lat,lastPos.lng];
- if(!meMk){meCi=L.circle(ll,{radius:lastPos.acc||20,color:'#2563eb',weight:1,fillOpacity:.12}).addTo(map);meMk=L.circleMarker(ll,{radius:9,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(map).bindPopup('Estás aquí')}
- else{meMk.setLatLng(ll);meCi.setLatLng(ll);meCi.setRadius(lastPos.acc||20)}}
-function drawMap(el,routes,sales){if(!el)return;if(!window.L){el.innerHTML='<p class="mut pad">No se pudo cargar el mapa (¿sin conexión?).</p>';return}
- routeLine=null;meMk=null;meCi=null;
- map=L.map(el).setView([S.cfg.lat,S.cfg.lng],13);
- L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
- const bd=[];routes.forEach((r,i)=>{const pts=r.pts.map(p=>[p.lat,p.lng]),pl=L.polyline(pts,{color:COL[i%COL.length],weight:4}).addTo(map).bindPopup(esc(r.name));if(r.id===S.active)routeLine=pl;bd.push(...pts)});
- /* ventas cercanas (~10 m) se agrupan en un solo icono con el conteo */
- const gr={};sales.filter(s=>s.lat!=null).forEach(s=>{const k=s.lat.toFixed(4)+','+s.lng.toFixed(4);(gr[k]=gr[k]||[]).push(s)});
- Object.values(gr).forEach(g=>{const n=g.length,ic=L.divIcon({className:'',html:'<div class="pin">'+(n>1?n:'$')+'</div>',iconSize:[32,32],iconAnchor:[16,16]});
-  L.marker([g[0].lat,g[0].lng],{icon:ic}).addTo(map).bindPopup('<div style="max-height:220px;overflow:auto"><b>'+n+(n>1?' ventas':' venta')+' · '+$m(sum(g,s=>s.total))+'</b><hr style="margin:4px 0">'+g.sort((a,b)=>a.ts-b.ts).map(saleDetail).join('')+'</div>');bd.push([g[0].lat,g[0].lng])});
- if(bd.length)map.fitBounds(bd,{padding:[20,20],maxZoom:17});
- if(lastPos){setMe();if(!bd.length)map.setView([lastPos.lat,lastPos.lng],16)}
- setTimeout(()=>map&&map.invalidateSize(),60)}
+function setMe(){if(!map||!mapReady||!lastPos)return;const ll=[lastPos.lng,lastPos.lat],acc={type:'Feature',geometry:{type:'Polygon',coordinates:[circ(lastPos.lat,lastPos.lng,lastPos.acc||20)]},properties:{}};
+ if(!meMk){const e=document.createElement('div');e.className='me-dot';
+  map.addSource('me-acc',{type:'geojson',data:acc});map.addLayer({id:'me-acc',type:'fill',source:'me-acc',paint:{'fill-color':'#2563eb','fill-opacity':.12}});
+  meMk=new maplibregl.Marker({element:e}).setLngLat(ll).setPopup(new maplibregl.Popup({offset:14}).setText('Estás aquí')).addTo(map)}
+ else{meMk.setLngLat(ll);const q=map.getSource('me-acc');if(q)q.setData(acc)}}
+function flyZone(r){const z=zonesShown.find(x=>x.rank===r);if(!z||!map||!mapReady)return;const m=$('#map');if(m)m.scrollIntoView({behavior:'smooth',block:'center'});
+ map.flyTo({center:[z.lng,z.lat],zoom:15.5,duration:900});if(z.mk&&!z.mk.getPopup().isOpen())z.mk.togglePopup()}
+function drawMap(el,routes,sales){if(!el)return;if(!window.maplibregl){el.innerHTML='<p class="mut pad">No se pudo cargar el mapa (¿sin conexión?).</p>';return}
+ routeLine=null;meMk=null;meCi=null;mapReady=false;zonesShown=[];
+ try{map=new maplibregl.Map({container:el,style:MAP_STYLE,center:[S.cfg.lng,S.cfg.lat],zoom:13,attributionControl:false})}
+ catch(e){map=null;el.innerHTML='<p class="mut pad">Tu navegador no pudo iniciar el mapa (requiere WebGL).</p>';return}
+ const mp=map;mp.addControl(new maplibregl.AttributionControl({compact:true}));mp.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+ let errShown=false;mp.on('error',()=>{if(!errShown&&!mapReady){errShown=true;toast('No se pudo cargar el mapa. Revisa tu conexión.',1)}});
+ const bd=new maplibregl.LngLatBounds();let has=false;const ext=(lng,lat)=>{bd.extend([lng,lat]);has=true};
+ const zs=view==='home'?zonesX(sales).slice(0,5):[];zonesShown=zs;
+ mp.on('load',()=>{
+  if(zs.length){mp.addSource('zonas',{type:'geojson',data:{type:'FeatureCollection',features:zs.map(z=>({type:'Feature',properties:{rank:z.rank},geometry:{type:'Polygon',coordinates:[circ(z.lat,z.lng,z.rad)]}}))}});
+   mp.addLayer({id:'zonas-f',type:'fill',source:'zonas',paint:{'fill-color':'#f59e0b','fill-opacity':.2}});
+   mp.addLayer({id:'zonas-l',type:'line',source:'zonas',paint:{'line-color':'#d97706','line-width':2,'line-dasharray':[2,2]}});
+   zs.forEach(z=>{circ(z.lat,z.lng,z.rad,8).forEach(c=>ext(c[0],c[1]))})}
+  routes.forEach((r,i)=>{const co=r.pts.map(p=>[p.lng,p.lat]),id='route-'+i;
+   mp.addSource(id,{type:'geojson',data:lineF(co)});
+   mp.addLayer({id,type:'line',source:id,layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':COL[i%COL.length],'line-width':4}});
+   mp.on('click',id,e=>new maplibregl.Popup().setLngLat(e.lngLat).setText(r.name).addTo(mp));
+   mp.on('mouseenter',id,()=>mp.getCanvas().style.cursor='pointer');mp.on('mouseleave',id,()=>mp.getCanvas().style.cursor='');
+   if(r.id===S.active)routeLine={id,co};co.forEach(c=>ext(c[0],c[1]))});
+  /* zonas: insignia numerada sobre cada zona */
+  zs.forEach(z=>{const e=document.createElement('div');e.className='zpin';e.textContent=z.rank;
+   z.mk=new maplibregl.Marker({element:e,offset:[0,-28]}).setLngLat([z.lng,z.lat]).setPopup(new maplibregl.Popup({offset:30}).setHTML('<b>Zona '+z.rank+': '+esc(zname(z))+'</b><br>'+z.n+(z.n>1?' ventas':' venta')+' · <b>'+$m(z.inc)+'</b><br><small>'+Math.round(z.share*100)+'% de tus ingresos con ubicación</small>')).addTo(mp)});
+  /* una marca por CADA venta (cada local). Las que caen en el mismo punto se abren en abanico. En Ruta van numeradas por orden de visita */
+  const sv=sales.filter(x=>x.lat!=null).sort((a,b)=>a.ts-b.ts),num=new Map(sv.map((x,k)=>[x.id,k+1])),gr={},nu=view==='route';
+  sv.forEach(x=>{const k=x.lat.toFixed(4)+','+x.lng.toFixed(4);(gr[k]=gr[k]||[]).push(x)});
+  Object.values(gr).forEach(g=>{const n=g.length,rd=n>1?Math.min(34,12+n*3):0;
+   g.forEach((x,k)=>{const e=document.createElement('div'),an=-Math.PI/2+k/n*2*Math.PI;
+    e.className='pin';e.innerHTML='<span>'+(nu&&sv.length<100?num.get(x.id):'$')+'</span><span class="lbl">'+esc(x.client||x.name)+'</span>';
+    new maplibregl.Marker({element:e,offset:n>1?[Math.cos(an)*rd,Math.sin(an)*rd]:[0,0]}).setLngLat([x.lng,x.lat]).setPopup(new maplibregl.Popup({offset:22,maxWidth:'260px'}).setHTML(saleDetail(x,nu?num.get(x.id):0))).addTo(mp);ext(x.lng,x.lat)})});
+  const zl=()=>mp.getContainer().classList.toggle('zl',mp.getZoom()>=15.5);mp.on('zoom',zl);
+  mapReady=true;
+  if(has)mp.fitBounds(bd,{padding:30,maxZoom:17,duration:0});
+  if(lastPos){setMe();if(!has)mp.jumpTo({center:[lastPos.lng,lastPos.lat],zoom:16})}zl()});
+ setTimeout(()=>map&&map.resize(),60)}
 
 /* ================= VENTAS ================= */
 const salesF=()=>S.sales.filter(s=>(!F.from||s.ts>=+new Date(F.from+'T00:00'))&&(!F.to||s.ts<+new Date(F.to+'T00:00')+864e5)&&(!F.pid||s.pid===F.pid));
@@ -315,8 +404,8 @@ const rDist=r=>{let t=0;for(let i=1;i<r.pts.length;i++)t+=hav(r.pts[i-1],r.pts[i
 const rDur=r=>r.acc+(r.status==='tracking'?Date.now()-r.seg:0);
 const rSales=r=>S.sales.filter(s=>s.rid===r.id).length;
 function track(){lastPos=null;if(!navigator.geolocation)return toast('Este navegador no tiene GPS',1);
- wid=navigator.geolocation.watchPosition(p=>{const nf=!lastPos;lastPos={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};setMe();if(nf&&map)map.setView([lastPos.lat,lastPos.lng],17);const r=ar();if(!r||r.status!=='tracking')return;const q={id:uid(),lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()},l=r.pts[r.pts.length-1];
-  if(l&&hav(l,q)<8&&q.t-l.t<30000)return;r.pts.push(q);if(routeLine)routeLine.addLatLng([q.lat,q.lng]);r.u=Date.now();save();if(view==='route')live()},
+ wid=navigator.geolocation.watchPosition(p=>{const nf=!lastPos;lastPos={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};setMe();if(nf&&map&&mapReady)map.jumpTo({center:[lastPos.lng,lastPos.lat],zoom:17});const r=ar();if(!r||r.status!=='tracking')return;const q={id:uid(),lat:p.coords.latitude,lng:p.coords.longitude,t:Date.now()},l=r.pts[r.pts.length-1];
+  if(l&&hav(l,q)<8&&q.t-l.t<30000)return;r.pts.push(q);if(routeLine&&map&&mapReady){routeLine.co.push([q.lng,q.lat]);const rs=map.getSource(routeLine.id);if(rs)rs.setData(lineF(routeLine.co))}r.u=Date.now();save();if(view==='route')live()},
   e=>toast('GPS: '+e.message,1),{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
  if(navigator.wakeLock)navigator.wakeLock.request('screen').then(l=>wl=l).catch(()=>{})}
 function untrack(){if(wid!=null)navigator.geolocation.clearWatch(wid);wid=null;if(wl){wl.release().catch(()=>{});wl=null}}
@@ -430,7 +519,7 @@ const A={
  delprod:i=>{if(!confirm('¿Borrar producto? Las ventas pasadas se conservan.'))return;S.products=S.products.filter(x=>x.id!==i);S.del.push({t:'products',id:i});save();go('more')},
  delev:i=>{S.events=S.events.filter(x=>x.id!==i);S.del.push({t:'events',id:i});save();go('more')},
  bkup:()=>{const o=JSON.parse(JSON.stringify(S));o.cfg.key='';o.cfg.url='';dl('rutaventas_respaldo_'+day(Date.now())+'.json',JSON.stringify(o),'application/json')},
- demo,undemo,sql:()=>sheet('<h3>SQL para Supabase</h3><textarea class="sql" readonly>'+esc(SQL)+'</textarea><button class="btn p" data-a="copysql">Copiar</button><button class="btn" data-a="close">Cerrar</button>'),
+ zfly:id=>flyZone(+id),demo,undemo,sql:()=>sheet('<h3>SQL para Supabase</h3><textarea class="sql" readonly>'+esc(SQL)+'</textarea><button class="btn p" data-a="copysql">Copiar</button><button class="btn" data-a="close">Cerrar</button>'),
  copysql:()=>{const t=$('textarea.sql');t.select();navigator.clipboard?navigator.clipboard.writeText(t.value).then(()=>toast('SQL copiado')).catch(()=>toast('Copia manualmente el texto',1)):document.execCommand('copy')},
  out:async()=>{try{const c=await client();await c.auth.signOut();toast('Sesión cerrada')}catch(e){toast(e.message,1)}},
  sync:async()=>{toast('Sincronizando…');try{await sync();toast('Sincronización completada');go('more')}catch(e){toast('Error al sincronizar: '+(e.message||e),1)}}};
